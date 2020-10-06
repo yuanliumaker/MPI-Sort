@@ -1,9 +1,9 @@
 CFLAGS += -std=c99
 CFLAGS += -I../include
-CFLAGS += -DKEY_T=int32_t
+CFLAGS += -DKEY_T=uint8_t
 CFLAGS += -DSIZE_T=ptrdiff_t
 
-libmpisort.a : mpisort.o kernels.o
+libmpi-sort.a : dispatcher.o mpi-sort.o kernels.o
 	ar rcs $@ $^
 
 %.o : %.c

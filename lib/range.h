@@ -5,7 +5,7 @@
 
 typedef struct { ptrdiff_t begin, end; } range_t;
 
-static range_t range_part (
+static range_t range_split (
     const ptrdiff_t w,
     const ptrdiff_t wn,
     const ptrdiff_t tn)
@@ -34,4 +34,10 @@ static range_t range_keys (
     }
 
     return (range_t){ lmin, 1 + (ptrdiff_t)lmax };
+}
+
+static ptrdiff_t range_count (
+    const range_t e )
+{
+    return e.end - e.begin;
 }

@@ -17,43 +17,111 @@
 int NAME(KEY_T) (
     const KEY_T * sendkeys,
     const void * sendvals,
-    const int count,
+    const int sendcount,
     MPI_Datatype keytype,
     MPI_Datatype valtype,
     const void * recvkeys,
     const void * recvvals,
+    const int recvcount,
     MPI_Comm comm)
 {
+    if (MPI_IN_PLACE == sendkeys)
+	sendkeys = recvkeys;
+
+    if (MPI_IN_PLACE == sendvals)
+	sendvals = recvvals;
+
     int r, rc;
     MPI_CHECK(MPI_Comm_rank(comm, &r));
     MPI_CHECK(MPI_Comm_size(comm, &rc));
 
-    range_t keyrange, keyrange_global;
+    range_t keyrange;
 
     /* find key ranges */
     {
-	keyrange = range_keys(sendkeys, count);
+	keyrange = range_keys(sendkeys, sendcount);
 
-	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange_global.begin, 1, MPI_INT64_T, MPI_MIN, comm));
-	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange_global.end, 1, MPI_INT64_T, MPI_MAX, comm));
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.begin, 1, MPI_INT64_T, MPI_MIN, comm));
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.end, 1, MPI_INT64_T, MPI_MAX, comm));
 
 	/* more comfortable for exclusive scan */
 	++keyrange.end;
     }
 
+    const ptrdiff_t keyrange_count = keyrange.end - keyrange.begin;
+
     ptrdiff_t *histo = 0, *start = 0, *order = 0;
-    DIE_UNLESS(histo = calloc(count, sizeof(*histo)));
-    DIE_UNLESS(start = malloc(count* sizeof(*start)));
-    DIE_UNLESS(order = malloc(count* sizeof(*order)));
+    DIE_UNLESS(histo = calloc(keyrange_count, sizeof(*histo)));
+    DIE_UNLESS(start = malloc(keyrange_count * sizeof(*start)));
+    DIE_UNLESS(order = malloc(sendcount * sizeof(*order)));
 
     /* local sort */
-    counting_sort(keyrange.begin, keyrange.end, count, sendkeys,
-		  histo, start, order);
+    const ptrdiff_t local_count =
+	counting_sort(keyrange.begin, keyrange.end, sendcount, sendkeys, histo, start, order);
+
+    ptrdiff_t global_base = 0;
+    MPI_CHECK(MPI_Exscan(&local_count, &global_base, 1, MPI_INT64_T, MPI_SUM, comm));
+
+    ptrdiff_t * global_bas = malloc(keyrange_count * sizeof(*global_bas));
+    MPI_CHECK(MPI_Allreduce(start, global_bas, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
+
+    {
+	ptrdiff_t * tmp = calloc(sizeof(*tmp), keyrange_count);
+	MPI_CHECK(MPI_Exscan(start, tmp, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
+
+	for (ptrdiff_t i = 0; i < keyrange_count; ++i)
+	    global_bas[i] += tmp[i];
+    }
+
+    for (int rr = 0; rr < rc; ++rr)
+    {
+	MPI_CHECK(MPI_Barrier(comm));
+	if (rr == r)
+	{
+	    printf("rank %d (rangecount: %zd\n", r, keyrange_count);
+	    for (int d = 0; d < keyrange_count; ++d)
+		if (114 == d)
+		printf("%zd:%zd ", keyrange.begin + d, global_bas[d]);
+	    printf("\n");
+	}
+
+	MPI_CHECK(MPI_Barrier(comm));
+    }
+
+    const ptrdiff_t * upperbound (
+	const ptrdiff_t * first,
+	const ptrdiff_t * last,
+	const ptrdiff_t val)
+    {
+	const ptrdiff_t * it;
+	ptrdiff_t count, step;
+	count = last - first;
+
+	while (count > 0)
+	{
+	    it = first;
+	    step = count / 2;
+
+	    it += step;
+
+	    if (!(val < *it))
+	    {
+		first = ++it;
+		count -= step + 1;
+	    }
+	    else
+		count = step;
+	}
+
+	return first;
+    }
+
+    ptrdiff_t find_hec_send (const int rr)
+    {
+
+    }
 
 #if 0
-
-
-
     const range_t keyrange = range_part(r, rc, nc + 1);
 
     range_t nrng_ibuf = minmax(ibuf, irng.count);
@@ -429,4 +497,6 @@ int NAME(KEY_T) (
 
     return EXIT_SUCCESS;
 #endif
+
+    return MPI_SUCCESS;
 }

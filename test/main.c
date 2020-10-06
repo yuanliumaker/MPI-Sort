@@ -4,21 +4,39 @@
 
 #include <assert.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <mpi.h>
+#include <mpi-sort.h>
 
-#include "util.h"
-#include "kernels.h"
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+#define MPI_CHECK(stmt)						\
+    do								\
+    {								\
+	const int code = stmt;					\
+								\
+	if (code != MPI_SUCCESS)				\
+	{							\
+	    char msg[2048];					\
+	    int len = sizeof(msg);				\
+	    MPI_Error_string(code, msg, &len);			\
+								\
+	    fprintf(stderr,					\
+		    "ERROR\n" #stmt "%s (%s:%d)\n",		\
+			msg, __FILE__, __LINE__);		\
+								\
+	    fflush(stderr);					\
+								\
+	    MPI_Abort(MPI_COMM_WORLD, code);			\
+	}							\
+    }								\
+    while(0)
 
 int main (
     const int argc,
     const char * argv [])
 {
-    int CCO = 1, VERIFY = 1;
-    READENV(CCO, atoi);
-    READENV(VERIFY, atoi);
-
     MPI_CHECK(MPI_Init((int *)&argc, (char ***)&argv));
 
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -27,17 +45,15 @@ int main (
     MPI_CHECK(MPI_Comm_rank(comm, &r));
     MPI_CHECK(MPI_Comm_size(comm, &rc));
 
-    if (argc != 2)
+    if (argc != 3)
     {
-	fprintf(stderr,
-		"usage: %s <path/to/meshdir>\n",
-		argv[0]);
+	if (!r)
+	    fprintf(stderr,
+		    "usage: %s <path/to/input> <path/to/output>\n",
+		    argv[0]);
 
 	return EXIT_FAILURE;
     }
-
-    if (chdir(argv[1]))
-	perror("changing working directory");
 
     __extension__ ptrdiff_t count_items (
 	const char * p,
@@ -53,7 +69,7 @@ int main (
 
 	    MPI_Offset fsz;
 	    MPI_CHECK(MPI_File_get_size(f, &fsz));
-	    DIE_UNLESS(0 == fsz % esz);
+	    assert(0 == fsz % esz);
 
 	    retval = fsz / esz;
 
@@ -67,7 +83,8 @@ int main (
 
     __extension__ void * read (
 	const char * const p,
-	const range_t r,
+	const ptrdiff_t s,
+	const ptrdiff_t c,
 	MPI_Datatype t)
     {
 	MPI_File f = NULL;
@@ -78,31 +95,41 @@ int main (
 	int esz;
 	MPI_CHECK(MPI_Type_size(t, &esz));
 
-	void * buf;
-	DIE_UNLESS(buf = malloc(r.count * (ptrdiff_t)esz));
+	void * buf = malloc(c * (ptrdiff_t)esz);
+	assert(buf);
 
 	MPI_CHECK(MPI_File_read_at_all
-		  (f, r.start * (ptrdiff_t)esz, buf, r.count, t, MPI_STATUS_IGNORE));
+		  (f, s * (ptrdiff_t)esz, buf, c, t, MPI_STATUS_IGNORE));
 
 	MPI_CHECK(MPI_File_close(&f));
 
 	return buf;
     }
 
-    const ptrdiff_t nc = count_items("x.raw", sizeof(float));
-    const ptrdiff_t ec = count_items("i0.raw", sizeof(int));
-
-    const ptrdiff_t ic = ec * 4;
+    /* element count */
+    const ptrdiff_t ec = count_items(argv[1], sizeof(char));
 
     if (!r)
-	printf("nodes %zd elements %zd indices %zd\n", nc, ec, ic);
+	printf("processing %zd elements\n", ec);
 
-    const range_t erng = range_part(r, rc, ec);
-    const range_t irng = (range_t) { .start = erng.start * 4, .count = erng.count * 4 };
+    /* homogeneous blocksize */
+    const ptrdiff_t bsz = ((ec + rc - 1) / rc);
 
-    int * ibuf;
-    DIE_UNLESS(ibuf = malloc(irng.count * sizeof(*ibuf)));
+    /* local element range */
+    ptrdiff_t rangelo = (r + 0) * bsz;
+    ptrdiff_t rangehi = (r + 1) * bsz;
 
+    rangehi = MIN(rangehi, ec - 0);
+    rangelo = MIN(rangelo, ec - 1);
+
+    const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
+
+    int8_t * buf = read(argv[1], rangelo, rangec, MPI_UNSIGNED_CHAR);
+    assert(buf);
+
+    MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, MPI_UNSIGNED_CHAR, buf, rangec, comm));
+
+#if 0
     /* load indices */
     {
 	assert(erng.count * 4 == irng.count);
@@ -502,6 +529,6 @@ int main (
 
     if (!r)
 	printf("n2e: found %zd entries in %.3f ms. Bye.\n", 4 * ec, (tend - tbegin) * 1e3);
-
+#endif
     return EXIT_SUCCESS;
 }

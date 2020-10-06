@@ -105,11 +105,11 @@ ptrdiff_t exscan_int32 (
 
 #include "util.h"
 
-void counting_sort (
+ptrdiff_t counting_sort (
     const int minval,
     const int supval,
     const ptrdiff_t samplecount,
-    const int * const restrict samples,
+    const KEY_T * const restrict samples,
     ptrdiff_t * const restrict histo,
     ptrdiff_t * const restrict start,
     ptrdiff_t * const restrict order )
@@ -131,5 +131,5 @@ void counting_sort (
     for (ptrdiff_t i = 0; i < samplecount; ++i)
 	order[start[samples[i] - minval]++] = i;
 
-    exscan(d, histo, start);
+    return exscan(d, histo, start);
 }

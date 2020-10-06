@@ -28,11 +28,11 @@ ptrdiff_t exscan_int32 (
     const int * const restrict in,
     ptrdiff_t * const restrict out );
 
-void counting_sort (
+ptrdiff_t counting_sort (
     const int minval,
     const int supval,
     const ptrdiff_t samplecount,
-    const int * const restrict samples,
+    const KEY_T * const restrict samples,
     ptrdiff_t * const restrict histo,
     ptrdiff_t * const restrict start,
     ptrdiff_t * const restrict order );
