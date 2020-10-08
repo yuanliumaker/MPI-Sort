@@ -6,8 +6,8 @@ int MPI_Sort_bykey_uint8_t (
     const int sendcount,
     MPI_Datatype keytype,
     MPI_Datatype valtype,
-    const void * recvkeys,
-    const void * recvvals,
+    KEY_T * recvkeys,
+    void * recvvals,
     const int recvcount,
     MPI_Comm comm);
 
@@ -15,7 +15,7 @@ int MPI_Sort (
     const void * sendbuf,
     const int sendcount,
     MPI_Datatype datatype,
-    const void * recvbuf,
+    void * recvbuf,
     const int recvcount,
     MPI_Comm comm)
 {

@@ -2,6 +2,17 @@
 
 #include "kernels.h"
 
+ptrdiff_t fill (
+    const KEY_T v,
+    const ptrdiff_t count,
+    KEY_T * const restrict out )
+{
+    for (ptrdiff_t i = 0; i < count; ++i)
+	out[i] = v;
+
+    return count;
+}
+
 void mux4 (
     const int * const restrict in0,
     const int * const restrict in1,

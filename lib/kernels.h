@@ -1,5 +1,10 @@
 #include <stddef.h>
 
+ptrdiff_t fill (
+    const KEY_T v,
+    const ptrdiff_t count,
+    KEY_T * const restrict out );
+
 void mux4 (
     const int * const restrict in0,
     const int * const restrict in1,
