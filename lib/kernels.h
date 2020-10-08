@@ -36,3 +36,8 @@ ptrdiff_t counting_sort (
     ptrdiff_t * const restrict histo,
     ptrdiff_t * const restrict start,
     ptrdiff_t * const restrict order );
+
+const ptrdiff_t lowerbound (
+    const ptrdiff_t * first,
+    const ptrdiff_t * last,
+    const ptrdiff_t val);

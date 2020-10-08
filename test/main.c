@@ -113,14 +113,15 @@ int main (
 	printf("processing %zd elements\n", ec);
 
     /* homogeneous blocksize */
-    const ptrdiff_t bsz = ((ec + rc - 1) / rc);
+    //const ptrdiff_t bsz = ((ec + rc - 1) / rc);
+    const ptrdiff_t bsz = ((ec + rc/2 - 1) / (rc/2));
 
     /* local element range */
     ptrdiff_t rangelo = (r + 0) * bsz;
     ptrdiff_t rangehi = (r + 1) * bsz;
 
     rangehi = MIN(rangehi, ec - 0);
-    rangelo = MIN(rangelo, ec - 1);
+    rangelo = MIN(rangelo, ec - 0);
 
     const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
 

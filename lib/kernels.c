@@ -136,3 +136,35 @@ ptrdiff_t counting_sort (
 
     return exscan(d, histo, start);
 }
+
+#include <assert.h>
+
+const ptrdiff_t lowerbound (
+    const ptrdiff_t * first,
+    const ptrdiff_t * last,
+    const ptrdiff_t val)
+{
+    const ptrdiff_t * const head = first;
+    const ptrdiff_t * it;
+    ptrdiff_t count, step;
+    count = last - first;
+
+    while (count > 0)
+    {
+	it = first;
+	step = count / 2;
+
+	it += step;
+	if (*it < val)
+	{
+	    first = ++it;
+	    count -= step + 1;
+	}
+	else
+	    count = step;
+    }
+
+    assert(head <= first);
+
+    return first - head;
+}
