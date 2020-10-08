@@ -69,15 +69,18 @@ int maxval (
 
 ptrdiff_t exscan (
     const ptrdiff_t count,
-    const ptrdiff_t * const restrict in,
-    ptrdiff_t * const restrict out )
+    const ptrdiff_t * const in,
+    ptrdiff_t * const out )
 {
     ptrdiff_t s = 0;
 
     for (ptrdiff_t i = 0; i < count; ++i)
     {
+	const ptrdiff_t v = in[i];
+
 	out[i] = s;
-	s += in[i];
+
+	s += v;
     }
 
     return s;

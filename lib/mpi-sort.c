@@ -14,6 +14,36 @@
 #define CAT(x, y) x ## y
 #define NAME(x) CAT(MPI_Sort_bykey_, x)
 
+const ptrdiff_t lowerbound (
+    const ptrdiff_t * first,
+    const ptrdiff_t * last,
+    const ptrdiff_t val)
+{
+    const ptrdiff_t * const head = first;
+    const ptrdiff_t * it;
+    ptrdiff_t count, step;
+    count = last - first;
+
+    while (count > 0)
+    {
+	it = first;
+	step = count / 2;
+
+	it += step;
+	if (*it < val)
+	{
+	    first = ++it;
+	    count -= step + 1;
+	}
+	else
+	    count = step;
+    }
+
+    //assert(first < last);
+    assert(head <= first);
+    return first - head;
+}
+
 int NAME(KEY_T) (
     const KEY_T * sendkeys,
     const void * sendvals,
@@ -62,58 +92,190 @@ int NAME(KEY_T) (
     ptrdiff_t global_base = 0;
     MPI_CHECK(MPI_Exscan(&local_count, &global_base, 1, MPI_INT64_T, MPI_SUM, comm));
 
-    ptrdiff_t * global_bas = malloc(keyrange_count * sizeof(*global_bas));
-    MPI_CHECK(MPI_Allreduce(start, global_bas, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
+    ptrdiff_t * global_bas = calloc(sizeof(*global_bas), keyrange_count + 1);
+    ptrdiff_t global_count = 0;
 
+    printf("keyrange_count %d\n", keyrange_count);
+    /* "vertical" exclusive scan */
     {
-	ptrdiff_t * tmp = calloc(sizeof(*tmp), keyrange_count);
-	MPI_CHECK(MPI_Exscan(start, tmp, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
+	MPI_CHECK(MPI_Exscan(histo, global_bas, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
+
+	ptrdiff_t * tmp = malloc(keyrange_count * sizeof(*tmp));
+	tmp[0] = 0;
+	MPI_CHECK(MPI_Allreduce(histo, tmp, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
+	exscan(keyrange_count, tmp, tmp);
 
 	for (ptrdiff_t i = 0; i < keyrange_count; ++i)
-	    global_bas[i] += tmp[i];
+	       global_bas[i] += tmp[i];
+
+	MPI_CHECK(MPI_Allreduce(&local_count, &global_count, 1, MPI_INT64_T, MPI_SUM, comm));
+
+	global_bas[keyrange_count] = global_count;
+    for (int rr = 0; rr < rc; ++rr)
+	{
+	    MPI_CHECK(MPI_Barrier(comm));
+	    if (rr == r)
+	    {
+		printf("histo rank %d: \n", r);
+		for(int i = 0; i < 15 +0*keyrange_count; ++i)
+		    printf("%d:%zd ", i, histo[i]);
+	printf("\n");
+		printf("\n");
+	    }
+
+	    MPI_CHECK(MPI_Barrier(comm));
+	}
+
+    for (int rr = 0; rr < rc; ++rr)
+	{
+	    MPI_CHECK(MPI_Barrier(comm));
+	    if (rr == r)
+	    {
+		printf("start: %d\n", r);
+	for(int i = 0; i < keyrange_count; ++i)
+	    printf("%zd ", start[i]);
+	printf("\n");
+	}
+
+	    MPI_CHECK(MPI_Barrier(comm));
+	}
+
+	for (int i = 1; i < keyrange_count; ++i)
+	    if (global_bas[i]>= global_count)
+		printf("rank %d %d global_bas %zd (prev. %zd), global count %zd\n", r, i, global_bas[i], global_bas[i - 1], global_count);
+#ifndef NDEBUG
+	for (int i = 0; i < keyrange_count; ++i)
+	    assert(global_bas[i] >= 0 && global_bas[i] <= global_count);
+
+	for (int i = 1; i < keyrange_count; ++i)
+	    assert(global_bas[i - 1] <= global_bas[i]);
+
+
+#endif
     }
+
+    ptrdiff_t recvstart[rc + 1];
+
+    /* compute rank recv start */
+    {
+	ptrdiff_t tmp = recvcount, myend = 0;
+	MPI_CHECK(MPI_Scan(&tmp, &myend, 1, MPI_INT64_T, MPI_SUM, comm));
+
+	recvstart[0] = 0;
+	MPI_CHECK(MPI_Allgather(&myend, 1, MPI_INT64_T, recvstart + 1, 1, MPI_INT64_T, comm));
+
+	assert(recvstart[rc] == global_count);
+    }
+
+#ifndef NDEBUG
+    for (int rr = 0; rr < rc; ++rr)
+	assert(recvstart[rr] >= 0);
+
+    for (int rr = 1; rr < rc; ++rr)
+	assert(recvstart[rr - 1] <= recvstart[rr]);
+#endif
+
+    ptrdiff_t msgstart[rc + 1];
+    msgstart[0] = 0;
+    printf("keyrange_count %d\n", keyrange_count);
+    for (int rr = 1; rr <= rc; ++rr)
+    {
+	const ptrdiff_t key = lowerbound(global_bas, global_bas + keyrange_count, recvstart[rr]);
+	if (rr == rc)
+	    printf("rank %d ---> sendcount %d recvstart[%d] = %zd, key = %zd, gbas[key] = %zd start[key] = %zd\n",
+	    r, sendcount,rc,recvstart[rc], key, global_bas[key], start[key]);
+
+	assert(key);
+	assert(global_bas[key - 1] < recvstart[rr] || key == keyrange_count);
+	assert(global_bas[key] >= recvstart[rr] || key == keyrange_count);
+	
+	if (!r)
+	{
+	    printf("recvstart[%d] = %zd, global bas: %zd, %zd, start, %zd %zd\n",
+		   rr, recvstart[rr],global_bas[key-1], global_bas[key], start[key-1 ], start[key]);
+
+	    //assert(recvstart[rr] - global_bas[key-1] <= start[key ] - start[key-1]);
+	}
+	if (key < keyrange_count)
+	    msgstart[rr] = MIN(
+		recvstart[rr] - global_bas[key - 1],
+		start[key] - start[key - 1]) + start[key - 1];
+	else
+	    msgstart[rr] = start[keyrange_count - 1]; //global_bas[key];
+
+    }
+    assert(msgstart[rc] == sendcount);
+    //msgstart[rc] = sendcount;
+    MPI_Barrier(comm);
+    ptrdiff_t msglen[rc];
+
+    {
+	for (int rr = 0; rr < rc; ++rr)
+	    msglen[rr] = msgstart[rr + 1] - msgstart[rr];
+
+#ifndef NDEBUG
+
+    ptrdiff_t s = 0;
+    for (ptrdiff_t rr = 0; rr < rc; ++rr)
+	s += msglen[rr];
+    printf("RANK %d::: s is %zd whereas sendcount is %zd\n", r, s, sendcount);
+    assert(s == sendcount);
+#endif
+	MPI_CHECK(MPI_Alltoall(MPI_IN_PLACE, 1, MPI_INT64_T, msglen, 1, MPI_INT64_T, comm));
+    }
+#ifndef NDEBUG
+    {
+    for (int rr = 0; rr < rc; ++rr)
+	assert(msgstart[rr] >= 0);
+
+    for (int rr = 1; rr < rc; ++rr)
+	assert(msgstart[rr - 1] <= msgstart[rr]);
+
+    ptrdiff_t s = 0;
+    for (ptrdiff_t rr = 0; rr < rc; ++rr)
+	s += msglen[rr];
+
+
+    for (int rr = 0; rr < rc; ++rr)
+	{
+	    MPI_CHECK(MPI_Barrier(comm));
+	    if (rr == r)
+	    {
+	printf("global_bas: \n");
+	for(int i = 0; i < keyrange_count; ++i)
+	    printf("%d,%zd ", i, global_bas[i]);
+	printf("\n");
+
+		printf("AAAA rank %d (recvcount: %zd) sum %zd\n", r, recvcount, s);
+		for (int d = 0; d < rc; ++d)
+		    printf("%zd msgstart %zd msglen %zd (recvstart: %zd)\n", d, msgstart[d], msglen[d], recvstart[d]);
+		//if (114 == d)
+		//printf("%zd:%zd ", keyrange.begin + d, global_bas[d]);
+		printf("\n");
+	    }
+
+	    MPI_CHECK(MPI_Barrier(comm));
+	}
+
+    assert(s == recvcount);
+
+    }
+#endif
 
     for (int rr = 0; rr < rc; ++rr)
     {
 	MPI_CHECK(MPI_Barrier(comm));
 	if (rr == r)
 	{
-	    printf("rank %d (rangecount: %zd\n", r, keyrange_count);
-	    for (int d = 0; d < keyrange_count; ++d)
-		if (114 == d)
-		printf("%zd:%zd ", keyrange.begin + d, global_bas[d]);
+	    printf("rank %d (recvcount: %zd\n", r, recvcount);
+	    for (int d = 0; d < rc; ++d)
+		printf("%zd:%zd ", d, recvstart[d]);
+	    //if (114 == d)
+	    //printf("%zd:%zd ", keyrange.begin + d, global_bas[d]);
 	    printf("\n");
 	}
 
 	MPI_CHECK(MPI_Barrier(comm));
-    }
-
-    const ptrdiff_t * upperbound (
-	const ptrdiff_t * first,
-	const ptrdiff_t * last,
-	const ptrdiff_t val)
-    {
-	const ptrdiff_t * it;
-	ptrdiff_t count, step;
-	count = last - first;
-
-	while (count > 0)
-	{
-	    it = first;
-	    step = count / 2;
-
-	    it += step;
-
-	    if (!(val < *it))
-	    {
-		first = ++it;
-		count -= step + 1;
-	    }
-	    else
-		count = step;
-	}
-
-	return first;
     }
 
     ptrdiff_t find_hec_send (const int rr)

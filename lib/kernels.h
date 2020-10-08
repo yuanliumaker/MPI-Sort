@@ -20,8 +20,8 @@ int maxval (
 
 ptrdiff_t exscan (
     const ptrdiff_t count,
-    const ptrdiff_t * const restrict in,
-    ptrdiff_t * const restrict out );
+    const ptrdiff_t * const in,
+    ptrdiff_t * const out );
 
 ptrdiff_t exscan_int32 (
     const ptrdiff_t count,
