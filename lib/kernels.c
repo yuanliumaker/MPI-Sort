@@ -13,25 +13,8 @@ ptrdiff_t fill (
     return count;
 }
 
-void mux4 (
-    const int * const restrict in0,
-    const int * const restrict in1,
-    const int * const restrict in2,
-    const int * const restrict in3,
-    const ptrdiff_t n,
-    int * const restrict out)
-{
-    for (ptrdiff_t i = 0; i < n; ++i)
-    {
-	out[0 + 4 * i] = in0[i];
-	out[1 + 4 * i] = in1[i];
-	out[2 + 4 * i] = in2[i];
-	out[3 + 4 * i] = in3[i];
-    }
-}
-
 #define NZCOUNT_KERNEL(T)			\
-    T nzcount_ ## T (				\
+    static T nzcount_ ## T (			\
 	const int * const restrict in,		\
 	const ptrdiff_t count)			\
     {						\
@@ -116,7 +99,7 @@ ptrdiff_t exscan_int32 (
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
+#include <assert.h>
 #include "util.h"
 
 ptrdiff_t counting_sort (
@@ -133,8 +116,7 @@ ptrdiff_t counting_sort (
     for (ptrdiff_t i = 0; i < samplecount; ++i)
     {
 	const int s = samples[i] - minval;
-	if (s < 0 || s >= d)
-	    printf("ooops %d max is %d\n", s, d);
+	assert(s >= 0 && s < d);
     }
 
     for (ptrdiff_t i = 0; i < samplecount; ++i)
@@ -150,7 +132,7 @@ ptrdiff_t counting_sort (
 
 #include <assert.h>
 
-const ptrdiff_t lowerbound (
+ptrdiff_t lowerbound (
     const ptrdiff_t * first,
     const ptrdiff_t * last,
     const ptrdiff_t val)
@@ -178,4 +160,94 @@ const ptrdiff_t lowerbound (
     assert(head <= first);
 
     return first - head;
+}
+
+#define GATHER_KERNEL(T)			\
+    static void gather_ ## T (			\
+	const ptrdiff_t count,			\
+	const T * restrict const in,		\
+	const ptrdiff_t * restrict const idx,	\
+	T * restrict const out )		\
+    {						\
+	for (ptrdiff_t i = 0; i < count; ++i)	\
+	    out[i] = in[idx[i]];		\
+    }
+
+#include <stdint.h>
+
+GATHER_KERNEL(uint8_t)
+GATHER_KERNEL(uint16_t)
+GATHER_KERNEL(uint32_t)
+GATHER_KERNEL(uint64_t)
+
+void gather (
+    const ptrdiff_t size,
+    const ptrdiff_t count,
+    const void * const in,
+    const ptrdiff_t * const idx,
+    void * const out )
+{
+    if (1 == size)
+	return gather_uint8_t(count, in, idx, out);
+
+    if (2 == size)
+	return gather_uint16_t(count, in, idx, out);
+
+    if (4 == size)
+	return gather_uint32_t(count, in, idx, out);
+
+    if (8 == size)
+	return gather_uint64_t(count, in, idx, out);
+
+    /* generic impl */
+    for (ptrdiff_t i = 0; i < count; ++i)
+	memcpy(size * i + (char *)out,
+	       size * idx[i] + (char *)in,
+	       size);
+}
+
+ptrdiff_t rle (
+    const KEY_T * const in,
+    const ptrdiff_t n,
+    KEY_T * const vs,
+    ptrdiff_t * ls)
+{
+    if (!n)
+	return 0;
+
+    ptrdiff_t c = 0;
+
+    KEY_T v = in[0];
+
+    if (vs && ls)
+    {
+	ptrdiff_t p = 0;
+
+	for (ptrdiff_t i = 1; i < n; ++i)
+	    if (v != in[i])
+	    {
+		vs[c] = v;
+		ls[c++] = i - p;
+
+		v = in[i];
+		p = i;
+	    }
+
+	vs[c] = v;
+	ls[c++] = n - p;
+    }
+    else
+    {
+	for (ptrdiff_t i = 1; i < n; ++i)
+	{
+	    if (v != in[i])
+	    {
+		++c;
+		v = in[i];
+	    }
+	}
+	++c;
+    }
+
+    return c;
 }

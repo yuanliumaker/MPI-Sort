@@ -14,7 +14,7 @@ int MPI_Sort_bykey (
     const int sendcount,
     MPI_Datatype keytype,
     MPI_Datatype valtype,
-    const void * recvkeys,
-    const void * recvvals,
+    void * recvkeys,
+    void * recvvals,
     const int recvcount,
     MPI_Comm comm);

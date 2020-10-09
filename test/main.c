@@ -11,6 +11,14 @@
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
+#define READENV(x, op)				\
+    do						\
+    {						\
+	if (getenv(#x))				\
+	    x = op(getenv(#x));			\
+    }						\
+    while(0)
+
 #define MPI_CHECK(stmt)						\
     do								\
     {								\
@@ -37,6 +45,9 @@ int main (
     const int argc,
     const char * argv [])
 {
+    int BYKEY = 0;
+    READENV(BYKEY, atoi);
+
     MPI_CHECK(MPI_Init((int *)&argc, (char ***)&argv));
 
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -125,14 +136,49 @@ int main (
 
     const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
 
-    int8_t * buf = read(argv[1], rangelo, rangec, MPI_UNSIGNED_CHAR);
-    assert(buf);
+    int8_t * keys = read(argv[1], rangelo, rangec, MPI_UNSIGNED_CHAR);
+    assert(keys);
+
+    int8_t * values = NULL;
+
+    if (BYKEY)
+    {
+	values = malloc(rangec);
+	memcpy(values, keys, rangec);
+    }
 
     double tbegin = MPI_Wtime();
 
-    MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, MPI_UNSIGNED_CHAR, buf, rangec, comm));
+    if (BYKEY)
+	MPI_CHECK(MPI_Sort_bykey(MPI_IN_PLACE, keys, rangec,
+				 MPI_UNSIGNED_CHAR, MPI_UNSIGNED_CHAR,
+				 keys, values, rangec, comm));
+    else
+	MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, MPI_UNSIGNED_CHAR, keys, rangec, comm));
 
     double tend = MPI_Wtime();
+
+    if (BYKEY)
+	if (memcmp(keys, values, rangec))
+	{
+	    
+	    ptrdiff_t s = 0;
+	    for (ptrdiff_t i  = 0; i < rangec; ++i)
+		s += keys[i] == values[i];
+
+	    ptrdiff_t first = 0;
+	    for (ptrdiff_t i = 0; i < rangec; ++i)
+		if  (keys[i] != values[i])
+		{
+		    first =  i;
+		    break;
+		}
+
+	    fprintf(stderr,
+		    "rank %d: error keys do not match with values. Same: %zd of %zd, first different: %zd (%d:%d and then %d:%d)\n", r, s, rangec, first, keys[first - 1], values[first - 1], keys[first], values[first]);
+
+//return EXIT_FAILURE;
+	}
 
     /* write to file */
     {
@@ -141,17 +187,20 @@ int main (
 		  (comm, argv[2], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
 
 	MPI_CHECK(MPI_File_write_at_all
-		  (f, rangelo, buf, rangec, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE));
+		  (f, rangelo, keys, rangec, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE));
 
 	MPI_CHECK(MPI_File_close(&f));
     }
 
-    free(buf);
+    if (BYKEY)
+	free(values);
+
+    free(keys);
 
     MPI_CHECK(MPI_Finalize());
 
     if (!r)
-	printf("n2e: found %zd entries in %.3f ms. Bye.\n", 4 * ec, (tend - tbegin) * 1e3);
+	printf("%s: sorted %zd entries in %.3f ms. Bye.\n", argv[0], ec, (tend - tbegin) * 1e3);
 
     return EXIT_SUCCESS;
 }

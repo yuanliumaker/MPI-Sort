@@ -5,14 +5,6 @@ ptrdiff_t fill (
     const ptrdiff_t count,
     KEY_T * const restrict out );
 
-void mux4 (
-    const int * const restrict in0,
-    const int * const restrict in1,
-    const int * const restrict in2,
-    const int * const restrict in3,
-    const ptrdiff_t n,
-    int * const restrict out );
-
 #include "range.h"
 
 ptrdiff_t nzcount (
@@ -42,7 +34,20 @@ ptrdiff_t counting_sort (
     ptrdiff_t * const restrict start,
     ptrdiff_t * const restrict order );
 
-const ptrdiff_t lowerbound (
+ptrdiff_t lowerbound (
     const ptrdiff_t * first,
     const ptrdiff_t * last,
     const ptrdiff_t val);
+
+void gather (
+    const ptrdiff_t element_size,
+    const ptrdiff_t count,
+    const void * const in,
+    const ptrdiff_t * const order,
+    void * const out );
+
+ptrdiff_t rle (
+    const KEY_T * const seq,
+    const ptrdiff_t count,
+    KEY_T * const values,
+    ptrdiff_t * lengths );
