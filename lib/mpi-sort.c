@@ -155,7 +155,16 @@ int NAME(KEY_T) (
 		const ptrdiff_t key =
 		    lowerbound(global_bas, global_bas + keyrange_count, recvstart_rank[rr]);
 
-		assert(key);
+		assert(recvstart_rank[rr]);
+
+		/* i have no items for rank rr */
+		if (!key)
+		{
+		    send_msgstart[rr] = 0;
+
+		    continue;
+		}
+
 		assert(global_bas[key - 1] < recvstart_rank[rr] || key == keyrange_count);
 		assert(global_bas[key] >= recvstart_rank[rr] || key == keyrange_count);
 
