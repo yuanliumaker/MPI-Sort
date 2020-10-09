@@ -99,8 +99,9 @@ int NAME(KEY_T) (
 	    assert(first - 1 >= 0 || !r);
 	    assert(last + 2 <= keyrange_count || rc - 1 == r);
 
+#ifndef NDEBUG
 	    memcpy(recv_histo, recv_start, sizeof(*recv_histo) * keyrange_count);
-
+#endif
 	    exscan(keyrange_count, recv_start, recv_start);
 	}
 
@@ -403,12 +404,17 @@ int NAME(KEY_T) (
 
 	KEY_T * dst = recvkeys;
 
-	dst += fill(keyrange.begin + first - 1, global_start[first] - recvstart_rank[r], dst);
+	assert(global_start[first] >= 0);
+	assert(recvstart_rank[r] >= 0);
+
+	__extension__ ptrdiff_t cap(int n) { return MIN(n, recvcount - (dst - recvkeys)); }
+
+	dst += fill(keyrange.begin + first - 1, cap(global_start[first] - recvstart_rank[r]), dst);
 
 	for(ptrdiff_t i = first; i < last; ++i)
-	    dst += fill(keyrange.begin + i, global_start[i + 1] - global_start[i], dst);
+	    dst += fill(keyrange.begin + i, cap(global_start[i + 1] - global_start[i]), dst);
 
-	dst += fill(keyrange.begin + last, recvstart_rank[r + 1] - global_start[last], dst);
+	dst += fill(keyrange.begin + last, cap(recvstart_rank[r + 1] - global_start[last]), dst);
 
 	assert(dst - recvkeys == recvcount);
     }
