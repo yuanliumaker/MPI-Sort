@@ -14,6 +14,26 @@
 #define CAT(x, y) x ## y
 #define NAME(x) CAT(MPI_Sort_bykey_, x)
 
+#ifndef NDEBUG
+#define ASSERT_SUM(expected, count, in)		\
+    {						\
+	ptrdiff_t s = 0;			\
+	for (ptrdiff_t i = 0; i < count; ++i)	\
+	    s += in[i];				\
+						\
+	assert(expected == s);			\
+    }						\
+
+void assert_constant (
+    const KEY_T val,
+    const ptrdiff_t n,
+    const KEY_T * d )
+{
+    for(ptrdiff_t i = 0; i < n; ++i)
+	assert(val == d[i]);
+}
+#endif
+
 int NAME(KEY_T) (
     const KEY_T * sendkeys,
     const void * sendvals0,
@@ -79,9 +99,9 @@ int NAME(KEY_T) (
 #ifndef NDEBUG
 	ptrdiff_t * recv_histo = calloc(sizeof(*recv_histo), keyrange_count);
 #endif
+
 	/* compute recv_start */
 	{
-#if 1
 	    const ptrdiff_t t0 = recvstart_rank[r + 0];
 	    const ptrdiff_t t1 = recvstart_rank[r + 1];
 
@@ -101,51 +121,12 @@ int NAME(KEY_T) (
 
 	    recv_start[last] += t1 - global_start[MAX(k0, k1 - 1)];
 
-#else
-	    ptrdiff_t first = 0, last = keyrange_count - 1;
-
-	    if (r)
- 		first = lowerbound(global_start, global_start + keyrange_count, recvstart_rank[r]);
-
-	    if (r != rc - 1)
-	    {
-		last = -1 + lowerbound(global_start, global_start + keyrange_count, recvstart_rank[r + 1]);
-		//last = MAX(first, last);
-	    }
-
-
-	    if (first)
-		recv_start[first - 1] = global_start[first] - recvstart_rank[r];
-
-	    for(ptrdiff_t i = first; i < last; ++i)
-		recv_start[i] = global_start[i + 1] - global_start[i];
-
-	    recv_start[last] += recvstart_rank[r + 1] - global_start[MAX(first, last)];
-
-	    if (1 == r)
-		printf("first: %zd, last %zd -> count %zd %zd (contribs: %zd, %zd)\n",
-		       first, last, recv_start[0], recv_start[1],
-		       global_start[first] - recvstart_rank[r],
-		       recvstart_rank[r + 1] - global_start[last]
-		    );
-
-	    assert(first - 1 >= 0 || !r);
-	    assert(last + 2 <= keyrange_count || rc - 1 == r);
-#endif
 #ifndef NDEBUG
 	    {
 		memcpy(recv_histo, recv_start, sizeof(*recv_histo) * keyrange_count);
 
-		ptrdiff_t s = 0;
-		for (ptrdiff_t i = 0; i < keyrange_count; ++i)
-		    s += recv_histo[i];
-
-		if (recvcount != s)
-		    printf("%zd vs %zd oopsa rank %d: targets: %zd and %zd, got keys: %zd -> %zd and %zd -> %zd (keyrange count %zd)\n",
-			   recvcount, s, r, recvstart_rank[r], recvstart_rank[r + 1], first, global_start[first], last, global_start[last], keyrange_count);
-
 		assert(recvcount == recvstart_rank[r + 1] - recvstart_rank[r]);
-		assert(recvcount == s);
+		ASSERT_SUM(recvcount, keyrange_count, recv_histo);
 	    }
 #endif
 	    exscan(keyrange_count, recv_start, recv_start);
@@ -298,18 +279,6 @@ int NAME(KEY_T) (
 
 	    memset(recv_msg, 0, sizeof(recv_msg));
 
-			__extension__ void homocheck(int val, uint8_t * d, ptrdiff_t n)
-			{
-			    for(ptrdiff_t i = 0; i < n; ++i)
-			    {
-				if (!(d[i] == val))
-				    printf("HOMOCHECK rank %d oopsa %d vs %d at %d\n",
-					   r, d[i], val, i);
-
-				assert(d[i] == val);
-			    }
-			}
-
 	    __extension__ void post_and_send (const int d)
 	    {
 		/* post recv */
@@ -352,29 +321,23 @@ int NAME(KEY_T) (
 			KEY_T * keys = malloc(sizeof(*keys) * hlen);
 			ptrdiff_t * lengths = malloc(sizeof(*lengths) * hlen);
 
-			const ptrdiff_t check = rle(sortedkeys + mstart, mlen, keys, lengths);
+			const ptrdiff_t runcount = rle(sortedkeys + mstart, mlen, keys, lengths);
 #ifndef NDEBUG
-
 			{
-			KEY_T * asd = sortedkeys + mstart;
-			for(ptrdiff_t l = 0; l < check; ++l)
-			{
-			    homocheck(keys[l], asd, lengths[l]);
-			    asd += lengths[l];
-			}
-			}
+			    const KEY_T * in = sortedkeys + mstart;
 
-			{
-			    assert(check == hlen);
+			    for(ptrdiff_t l = 0; l < runcount; ++l)
+			    {
+				assert_constant(keys[l], lengths[l], in);
+				in += lengths[l];
+			    }
 
-			    for (ptrdiff_t i = 0; i < check; ++i)
+			    assert(runcount == hlen);
+
+			    for (ptrdiff_t i = 0; i < runcount; ++i)
 				assert(keys[i] >= keyrange.begin && keys[i] < keyrange.end - 1);
 
-			    ptrdiff_t s = 0;
-			    for (ptrdiff_t i = 0; i < check; ++i)
-				s += lengths[i];
-
-			    assert(mlen == s);
+			    ASSERT_SUM(mlen, runcount, lengths);
 			}
 #endif
 
@@ -391,18 +354,20 @@ int NAME(KEY_T) (
 			    gather(esz1, mlen, sendvals1, order + mstart, esz0 * mlen + values);
 
 #ifndef NDEBUG
+			if (sendkeys == sendvals0 && !sendvals1 ||
+			    sendkeys == sendvals1 && !sendvals0 )
 			{
-			    KEY_T * asd2 = values;
-			    for(ptrdiff_t l = 0; l < check; ++l)
+			    const KEY_T * const in0 = values;
+			    const KEY_T * in = in0;
+
+			    for(ptrdiff_t l = 0; l < runcount; ++l)
 			    {
-				homocheck(keys[l], asd2, lengths[l]);
-				asd2 += lengths[l];
+				assert_constant(keys[l], lengths[l], in);
+				in += lengths[l];
 			    }
 
-			    KEY_T * f = values;
-			    assert(asd2 - f == mlen);
+			    assert(in - in0 == mlen);
 			}
-
 #endif
 			MPI_CHECK(MPI_Send(values, mlen, VALUE01, rdst, 2 + 3 * d, comm));
 
@@ -441,25 +406,14 @@ int NAME(KEY_T) (
 		    if (recvvals1)
 			memcpy(recvvals1 + esz1 * recv_start[k], v1, esz1 * c);
 
-		    homocheck(m->keys[l], v1, c);
-		    v0 += esz0 * c;
-		    v1 += esz1 * c;
-		    recv_start[k] += c;
 #ifndef NDEBUG
-		    /*{
-			const uint8_t * data = recvvals1;
-			for(int i = 0; i < c; ++i)
-			{
-			    if (!(data[i] == m->keys[l]))
-				printf("rank %d oopsa %d vs %d at %d\n",
-				       r, data[i], m->keys[l], i);
-			    assert(data[i] == m->keys[l]);
-			}
-		    }*/
 		    assert(recv_histo[k]);
 		    recv_histo[k] -= c;
 		    assert(recv_histo[k] >= 0);
 #endif
+		    v0 += esz0 * c;
+		    v1 += esz1 * c;
+		    recv_start[k] += c;
 		}
 
 #ifndef NDEBUG
@@ -495,16 +449,9 @@ int NAME(KEY_T) (
 	    }
 
 #ifndef NDEBUG
-	    int fail = 0;
 	    for (ptrdiff_t i = 0; i < keyrange_count; ++i)
-	    {
-		if (recv_histo[i])
-		{
-		    fail = 1;
-		    printf("oopsa rank %d histo[%d] = %zd\n", r, i, recv_histo[i]);
-		}
-	    }
-	    assert(!fail);
+		assert(!recv_histo[i]);
+
 	    free(recv_histo);
 #endif
 	    MPI_CHECK(MPI_Type_free(&MPI_KEY_T));
@@ -517,7 +464,6 @@ int NAME(KEY_T) (
 
     if (recvkeys != NULL)
     {
-#if 1
 	const ptrdiff_t t0 = recvstart_rank[r + 0];
 	const ptrdiff_t t1 = recvstart_rank[r + 1];
 
@@ -556,34 +502,6 @@ int NAME(KEY_T) (
 	assert(dst - recvkeys + last_count <= recvcount);
 	dst += fill(keyrange.begin + last, last_count, dst);
 
-	assert(dst - recvkeys == recvcount);
-
-#else
-	ptrdiff_t first = 0, last = keyrange_count - 1;
-
-	if (r)
-	    first = lowerbound(global_start, global_start + keyrange_count, recvstart_rank[r]);
-
-	if (r != rc - 1)
-	{
-	    last = -1 + lowerbound(global_start, global_start + keyrange_count, recvstart_rank[r + 1]);
-	    //last = MAX(last, first);
-	}
-
-	KEY_T * dst = recvkeys;
-
-	assert(global_start[first] >= 0);
-	assert(recvstart_rank[r] >= 0);
-
-	__extension__ ptrdiff_t cap(int n) { return MIN(n, recvcount - (dst - recvkeys)); }
-
-	dst += fill(keyrange.begin + first - 1, cap(global_start[first] - recvstart_rank[r]), dst);
-
-	for(ptrdiff_t i = first; i < last; ++i)
-	    dst += fill(keyrange.begin + i, cap(global_start[i + 1] - global_start[i]), dst);
-
-	dst += fill(keyrange.begin + last, cap(recvstart_rank[r + 1] - global_start[last]), dst);
-#endif
 	assert(dst - recvkeys == recvcount);
     }
 
