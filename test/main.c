@@ -144,8 +144,8 @@ int main (
 
     if (BYKEY)
     {
-	values = malloc(rangec);
-	memcpy(values, keys, rangec);
+	values = malloc(rangec * ESZ);
+	memcpy(values, keys, rangec * ESZ);
     }
 
     double tbegin = MPI_Wtime();
@@ -172,7 +172,7 @@ int main (
 		  (comm, argv[2], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
 
 	MPI_CHECK(MPI_File_write_at_all
-		  (f, rangelo, keys, rangec * ESZ, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE));
+		  (f, rangelo * ESZ, keys, rangec, type, MPI_STATUS_IGNORE));
 
 	MPI_CHECK(MPI_File_close(&f));
     }

@@ -447,7 +447,7 @@ int NAME(KEY_T) (
 	free(sortedkeys);
     }
 
-    if (recvkeys != NULL)
+    if (recvkeys)
     {
 	const ptrdiff_t t0 = recvstart_rank[r + 0];
 	const ptrdiff_t t1 = recvstart_rank[r + 1];
