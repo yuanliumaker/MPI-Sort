@@ -81,6 +81,27 @@ int NAME(KEY_T) (
 #endif
 	/* compute recv_start */
 	{
+#if 1
+	    const ptrdiff_t t0 = recvstart_rank[r + 0];
+	    const ptrdiff_t t1 = recvstart_rank[r + 1];
+
+	    const ptrdiff_t k0 =
+		lowerbound(global_start, global_start + keyrange_count, t0);
+
+	    const ptrdiff_t k1 =
+		lowerbound(global_start, global_start + keyrange_count, t1);
+
+	    const ptrdiff_t first = MAX(0, k0 - 1);
+	    const ptrdiff_t last = MAX(0, k1 - 1);
+
+	    recv_start[first] = global_start[k0] - t0;
+
+	    for(ptrdiff_t i = first + 1; i < last; ++i)
+		recv_start[i] = global_start[i + 1] - global_start[i];
+
+	    recv_start[last] += t1 - global_start[MAX(k0, k1 - 1)];
+
+#else
 	    ptrdiff_t first = 0, last = keyrange_count - 1;
 
 	    if (r)
@@ -102,7 +123,7 @@ int NAME(KEY_T) (
 	    recv_start[last] += recvstart_rank[r + 1] - global_start[MAX(first, last)];
 
 	    if (1 == r)
-		printf("first: %zd, last %zd -> count %zd %zd (contribs: %zd, %zd)\n", 
+		printf("first: %zd, last %zd -> count %zd %zd (contribs: %zd, %zd)\n",
 		       first, last, recv_start[0], recv_start[1],
 		       global_start[first] - recvstart_rank[r],
 		       recvstart_rank[r + 1] - global_start[last]
@@ -110,7 +131,7 @@ int NAME(KEY_T) (
 
 	    assert(first - 1 >= 0 || !r);
 	    assert(last + 2 <= keyrange_count || rc - 1 == r);
-
+#endif
 #ifndef NDEBUG
 	    {
 		memcpy(recv_histo, recv_start, sizeof(*recv_histo) * keyrange_count);
@@ -342,7 +363,7 @@ int NAME(KEY_T) (
 			    asd += lengths[l];
 			}
 			}
-			    
+
 			{
 			    assert(check == hlen);
 
@@ -496,6 +517,48 @@ int NAME(KEY_T) (
 
     if (recvkeys != NULL)
     {
+#if 1
+	const ptrdiff_t t0 = recvstart_rank[r + 0];
+	const ptrdiff_t t1 = recvstart_rank[r + 1];
+
+	const ptrdiff_t k0 =
+	    lowerbound(global_start, global_start + keyrange_count, t0);
+
+	const ptrdiff_t k1 =
+	    lowerbound(global_start, global_start + keyrange_count, t1);
+
+	const ptrdiff_t first = MAX(0, k0 - 1);
+	const ptrdiff_t last = MAX(0, k1 - 1);
+
+	ptrdiff_t first_count = global_start[k0] - t0;
+	ptrdiff_t last_count = t1 - global_start[MAX(k0, k1 - 1)];
+
+	if (first == last)
+	{
+	    first_count += last_count;
+	    last_count = 0;
+	}
+
+	KEY_T * dst = recvkeys;
+
+	assert(global_start[first] >= 0);
+	assert(recvstart_rank[r] >= 0);
+
+	assert(dst - recvkeys + first_count <= recvcount);
+	dst += fill(keyrange.begin + first, first_count, dst);
+
+	for(ptrdiff_t i = first + 1; i < last; ++i)
+	{
+	    assert(dst - recvkeys + global_start[i + 1] - global_start[i] <= recvcount);
+	    dst += fill(keyrange.begin + i, global_start[i + 1] - global_start[i], dst);
+	}
+
+	assert(dst - recvkeys + last_count <= recvcount);
+	dst += fill(keyrange.begin + last, last_count, dst);
+
+	assert(dst - recvkeys == recvcount);
+
+#else
 	ptrdiff_t first = 0, last = keyrange_count - 1;
 
 	if (r)
@@ -520,7 +583,7 @@ int NAME(KEY_T) (
 	    dst += fill(keyrange.begin + i, cap(global_start[i + 1] - global_start[i]), dst);
 
 	dst += fill(keyrange.begin + last, cap(recvstart_rank[r + 1] - global_start[last]), dst);
-
+#endif
 	assert(dst - recvkeys == recvcount);
     }
 
