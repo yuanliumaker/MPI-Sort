@@ -5,14 +5,14 @@ CXXFLAGS += -std=c++11
 LDFLAGS += -L../lib
 LDFLAGS := -lmpi-sort $(LDFLAGS)
 
-GOALS = sort-uchar sort-vanilla
+GOALS = mpi-sort vanilla-sort
 
 all : $(GOALS)
 
-sort-vanilla : vanilla.cxx
+vanilla-sort : vanilla.cxx
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-sort-uchar : main.c
+mpi-sort : main.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 clean :

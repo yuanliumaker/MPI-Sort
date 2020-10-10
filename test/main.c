@@ -48,6 +48,9 @@ int main (
     int BYKEY = 0;
     READENV(BYKEY, atoi);
 
+    ptrdiff_t ESZ = 1;
+    READENV(ESZ, atoi);
+
     MPI_CHECK(MPI_Init((int *)&argc, (char ***)&argv));
 
     MPI_Comm comm = MPI_COMM_WORLD;
@@ -67,8 +70,7 @@ int main (
     }
 
     __extension__ ptrdiff_t count_items (
-	const char * p,
-	const ptrdiff_t esz)
+	const char * p)
     {
 	ptrdiff_t retval;
 
@@ -80,9 +82,9 @@ int main (
 
 	    MPI_Offset fsz;
 	    MPI_CHECK(MPI_File_get_size(f, &fsz));
-	    assert(0 == fsz % esz);
+	    assert(0 == fsz % ESZ);
 
-	    retval = fsz / esz;
+	    retval = fsz / ESZ;
 
 	    MPI_CHECK(MPI_File_close(&f));
 	}
@@ -103,14 +105,11 @@ int main (
 	MPI_CHECK(MPI_File_open
 		  (comm, (char *)p, MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
 
-	int esz;
-	MPI_CHECK(MPI_Type_size(t, &esz));
-
-	void * buf = malloc(c * (ptrdiff_t)esz);
+	void * buf = malloc(c * ESZ);
 	assert(buf);
 
 	MPI_CHECK(MPI_File_read_at_all
-		  (f, s * (ptrdiff_t)esz, buf, c, t, MPI_STATUS_IGNORE));
+		  (f, s * ESZ, buf, c, t, MPI_STATUS_IGNORE));
 
 	MPI_CHECK(MPI_File_close(&f));
 
@@ -118,7 +117,7 @@ int main (
     }
 
     /* element count */
-    const ptrdiff_t ec = count_items(argv[1], sizeof(char));
+    const ptrdiff_t ec = count_items(argv[1]);
 
     if (!r)
 	printf("processing %zd elements\n", ec);
@@ -136,10 +135,12 @@ int main (
 
     const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
 
-    int8_t * keys = read(argv[1], rangelo, rangec, MPI_UNSIGNED_CHAR);
+    const MPI_Datatype type = ESZ == 1 ? MPI_UNSIGNED_CHAR : MPI_UNSIGNED_SHORT;
+
+    void * keys = read(argv[1], rangelo, rangec, type);
     assert(keys);
 
-    int8_t * values = NULL;
+    void * values = NULL;
 
     if (BYKEY)
     {
@@ -151,34 +152,18 @@ int main (
 
     if (BYKEY)
 	MPI_CHECK(MPI_Sort_bykey(MPI_IN_PLACE, keys, rangec,
-				 MPI_UNSIGNED_CHAR, MPI_UNSIGNED_CHAR,
+				 type, type,
 				 keys, values, rangec, comm));
     else
-	MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, MPI_UNSIGNED_CHAR, keys, rangec, comm));
+	MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, type, keys, rangec, comm));
 
     double tend = MPI_Wtime();
 
     if (BYKEY)
-	if (memcmp(keys, values, rangec))
-	{
-	    
-	    ptrdiff_t s = 0;
-	    for (ptrdiff_t i  = 0; i < rangec; ++i)
-		s += keys[i] == values[i];
-
-	    ptrdiff_t first = 0;
-	    for (ptrdiff_t i = 0; i < rangec; ++i)
-		if  (keys[i] != values[i])
-		{
-		    first =  i;
-		    break;
-		}
-
+	if (memcmp(keys, values, rangec * ESZ))
 	    fprintf(stderr,
-		    "rank %d: error keys do not match with values. Same: %zd of %zd, first different: %zd (%d:%d and then %d:%d)\n", r, s, rangec, first, keys[first - 1], values[first - 1], keys[first], values[first]);
-
-//return EXIT_FAILURE;
-	}
+		    "ERROR: rank %d: keys do not match with values.\n",
+		    r);
 
     /* write to file */
     {
@@ -187,7 +172,7 @@ int main (
 		  (comm, argv[2], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
 
 	MPI_CHECK(MPI_File_write_at_all
-		  (f, rangelo, keys, rangec, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE));
+		  (f, rangelo, keys, rangec * ESZ, MPI_UNSIGNED_CHAR, MPI_STATUS_IGNORE));
 
 	MPI_CHECK(MPI_File_close(&f));
     }

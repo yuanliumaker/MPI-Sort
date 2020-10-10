@@ -16,7 +16,7 @@
 	MPI_Comm comm);
 
 DECLARE(dsort_uint8_t, uint8_t);
-DECLARE(dsort_int8_t, int8_t);
+DECLARE(dsort_uint16_t, int16_t);
 
 enum { DONTCARE_TYPE = -1 };
 
@@ -39,8 +39,8 @@ int MPI_Sort_bykey (
 	    sendkeys, 0, sendvals, sendcount,
 	    DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 
-    if (MPI_SIGNED_CHAR == keytype || MPI_CHAR == keytype)
-	return dsort_int8_t (
+    if (MPI_UNSIGNED_SHORT == keytype || MPI_UINT16_T == keytype)
+	return dsort_uint16_t (
 	    sendkeys, 0, sendvals, sendcount,
 	    DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 
