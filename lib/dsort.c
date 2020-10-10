@@ -8,32 +8,12 @@
 
 #include <mpi.h>
 
-#include "util.h"
-#include "kernels.h"
+#include "macros.h"
+#include "common.h"
+#include "static.h"
 
 #define CAT(x, y) x ## y
-#define NAME(x) CAT(MPI_Sort_bykey_, x)
-
-#ifndef NDEBUG
-#define ASSERT_SUM(expected, count, in)		\
-    do						\
-    {						\
-	ptrdiff_t s = 0;			\
-	for (ptrdiff_t i = 0; i < count; ++i)	\
-	    s += in[i];				\
-						\
-	assert(expected == s);			\
-    }						\
-    while(0)
-
-#define ASSERT_CONSTANT(val, n, d)		\
-    do						\
-    {						\
-	for(ptrdiff_t i = 0; i < n; ++i)	\
-	    assert(val == d[i]);		\
-    }						\
-    while(0)
-#endif
+#define NAME(x) CAT(dsort_, x)
 
 int NAME(KEY_T) (
     const KEY_T * sendkeys,
@@ -48,6 +28,8 @@ int NAME(KEY_T) (
     const int recvcount,
     MPI_Comm comm)
 {
+    DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
+
     int r, rc;
     MPI_CHECK(MPI_Comm_rank(comm, &r));
     MPI_CHECK(MPI_Comm_size(comm, &rc));

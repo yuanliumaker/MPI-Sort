@@ -43,3 +43,24 @@
 	    x = op(getenv(#x));			\
     }						\
     while(0)
+
+#ifndef NDEBUG
+#define ASSERT_SUM(expected, count, in)		\
+    do						\
+    {						\
+	ptrdiff_t s = 0;			\
+	for (ptrdiff_t i = 0; i < count; ++i)	\
+	    s += in[i];				\
+						\
+	assert(expected == s);			\
+    }						\
+    while(0)
+
+#define ASSERT_CONSTANT(val, n, d)		\
+    do						\
+    {						\
+	for(ptrdiff_t i = 0; i < n; ++i)	\
+	    assert(val == d[i]);		\
+    }						\
+    while(0)
+#endif
