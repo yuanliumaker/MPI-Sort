@@ -16,6 +16,7 @@
 
 #ifndef NDEBUG
 #define ASSERT_SUM(expected, count, in)		\
+    do						\
     {						\
 	ptrdiff_t s = 0;			\
 	for (ptrdiff_t i = 0; i < count; ++i)	\
@@ -23,15 +24,15 @@
 						\
 	assert(expected == s);			\
     }						\
+    while(0)
 
-void assert_constant (
-    const KEY_T val,
-    const ptrdiff_t n,
-    const KEY_T * d )
-{
-    for(ptrdiff_t i = 0; i < n; ++i)
-	assert(val == d[i]);
-}
+#define ASSERT_CONSTANT(val, n, d)		\
+    do						\
+    {						\
+	for(ptrdiff_t i = 0; i < n; ++i)	\
+	    assert(val == d[i]);		\
+    }						\
+    while(0)
 #endif
 
 int NAME(KEY_T) (
@@ -111,15 +112,17 @@ int NAME(KEY_T) (
 	    const ptrdiff_t k1 =
 		lowerbound(global_start, global_start + keyrange_count, t1);
 
-	    const ptrdiff_t first = MAX(0, k0 - 1);
-	    const ptrdiff_t last = MAX(0, k1 - 1);
+	    const ptrdiff_t first = k0 - 1;
+	    const ptrdiff_t last = k1 - 1;
 
-	    recv_start[first] = global_start[k0] - t0;
+	    if (first >= 0)
+		recv_start[first] = global_start[k0] - t0;
 
 	    for(ptrdiff_t i = first + 1; i < last; ++i)
 		recv_start[i] = global_start[i + 1] - global_start[i];
 
-	    recv_start[last] += t1 - global_start[MAX(k0, k1 - 1)];
+	    if (last >= 0)
+		recv_start[last] += t1 - global_start[MAX(k0, k1 - 1)];
 
 #ifndef NDEBUG
 	    {
@@ -328,7 +331,7 @@ int NAME(KEY_T) (
 
 			    for(ptrdiff_t l = 0; l < runcount; ++l)
 			    {
-				assert_constant(keys[l], lengths[l], in);
+				ASSERT_CONSTANT(keys[l], lengths[l], in);
 				in += lengths[l];
 			    }
 
@@ -362,7 +365,7 @@ int NAME(KEY_T) (
 
 			    for(ptrdiff_t l = 0; l < runcount; ++l)
 			    {
-				assert_constant(keys[l], lengths[l], in);
+				ASSERT_CONSTANT(keys[l], lengths[l], in);
 				in += lengths[l];
 			    }
 
@@ -473,8 +476,8 @@ int NAME(KEY_T) (
 	const ptrdiff_t k1 =
 	    lowerbound(global_start, global_start + keyrange_count, t1);
 
-	const ptrdiff_t first = MAX(0, k0 - 1);
-	const ptrdiff_t last = MAX(0, k1 - 1);
+	const ptrdiff_t first = k0 - 1;
+	const ptrdiff_t last = k1 - 1;
 
 	ptrdiff_t first_count = global_start[k0] - t0;
 	ptrdiff_t last_count = t1 - global_start[MAX(k0, k1 - 1)];
@@ -491,7 +494,9 @@ int NAME(KEY_T) (
 	assert(recvstart_rank[r] >= 0);
 
 	assert(dst - recvkeys + first_count <= recvcount);
-	dst += fill(keyrange.begin + first, first_count, dst);
+
+	if (first >= 0)
+	    dst += fill(keyrange.begin + first, first_count, dst);
 
 	for(ptrdiff_t i = first + 1; i < last; ++i)
 	{
@@ -500,7 +505,9 @@ int NAME(KEY_T) (
 	}
 
 	assert(dst - recvkeys + last_count <= recvcount);
-	dst += fill(keyrange.begin + last, last_count, dst);
+
+	if (last >= 0)
+	    dst += fill(keyrange.begin + last, last_count, dst);
 
 	assert(dst - recvkeys == recvcount);
     }
