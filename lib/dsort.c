@@ -58,6 +58,7 @@ int NAME(KEY_T) (
     const ptrdiff_t local_count =
 	counting_sort(keyrange.begin, keyrange.end, sendcount, sendkeys, histo, start, order);
 
+    /* exclusive scan of global histogram */
     ptrdiff_t * global_start = malloc(keyrange_count * sizeof(*global_start));
     MPI_CHECK(MPI_Allreduce(start, global_start, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
 
@@ -114,11 +115,11 @@ int NAME(KEY_T) (
 		ASSERT_SUM(recvcount, keyrange_count, recv_histo);
 	    }
 #endif
-	    exscan(keyrange_count, recv_start, recv_start);
+	    exscan_inplace(keyrange_count, recv_start);
 	}
 
 	ptrdiff_t send_msgstart[rc + 1], send_msglen[rc], send_headlen[rc], recv_msglen[rc], recv_headlen[rc];
-	/* compute msgstart, msglen */
+	/* compute msgstarts, msglens, and headlens */
 	{
 	    ptrdiff_t * global_bas = calloc(sizeof(*global_bas), keyrange_count);
 
@@ -128,9 +129,10 @@ int NAME(KEY_T) (
 
 		ptrdiff_t * tmp = malloc(keyrange_count * sizeof(*tmp));
 
+		/* TODO: optimize as bcast global_bas + histo from rank rc - 1 */
 		MPI_CHECK(MPI_Allreduce(histo, tmp, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
 
-		exscan(keyrange_count, tmp, tmp);
+		exscan_inplace(keyrange_count, tmp);
 
 		for (ptrdiff_t i = 0; i < keyrange_count; ++i)
 		    global_bas[i] += tmp[i];
@@ -209,26 +211,15 @@ int NAME(KEY_T) (
 	    for (int rr = 1; rr < rc; ++rr)
 		assert(send_msgstart[rr - 1] <= send_msgstart[rr]);
 
-	    ptrdiff_t s = 0;
-
-	    for (ptrdiff_t rr = 0; rr < rc; ++rr)
-		s += send_msglen[rr];
-
-	    assert(s == sendcount);
+	    ASSERT_SUM(sendcount, rc, send_msglen);
 #endif
 
+	    /* TODO: mux2 send_headlen and send_msglen into a single call */
 	    MPI_CHECK(MPI_Alltoall(send_headlen, 1, MPI_INT64_T, recv_headlen, 1, MPI_INT64_T, comm));
 	    MPI_CHECK(MPI_Alltoall(send_msglen, 1, MPI_INT64_T, recv_msglen, 1, MPI_INT64_T, comm));
 
-#ifndef NDEBUG
-	    {
-		ptrdiff_t s = 0;
-		for (ptrdiff_t rr = 0; rr < rc; ++rr)
-		    s += recv_msglen[rr];
+	    ASSERT_SUM(recvcount, rc, recv_msglen);
 
-		assert(s == recvcount);
-	    }
-#endif
 	    free(global_bas);
 	}
 
@@ -242,6 +233,7 @@ int NAME(KEY_T) (
 	    if (recvvals1)
 		MPI_CHECK(MPI_Type_size(valtype1, &esz1));
 
+	    printf("SIZES: %zd %zd\n", esz0, esz1);
 	    const ptrdiff_t esz01 = esz0 + esz1;
 
 	    MPI_Datatype VALUE01;
@@ -392,6 +384,7 @@ int NAME(KEY_T) (
 			memcpy(recvvals1 + esz1 * recv_start[k], v1, esz1 * c);
 
 #ifndef NDEBUG
+		    assert(c > 0);
 		    assert(recv_histo[k]);
 		    recv_histo[k] -= c;
 		    assert(recv_histo[k] >= 0);
@@ -401,15 +394,7 @@ int NAME(KEY_T) (
 		    recv_start[k] += c;
 		}
 
-#ifndef NDEBUG
-		{
-		    ptrdiff_t s = 0;
-		    for (ptrdiff_t l = 0; l < hlen; ++l)
-			s += m->lengths[l];
-
-		    assert(mlen == s);
-		}
-#endif
+		ASSERT_SUM(mlen, hlen, m->lengths);
 
 		free(m->values);
 		free(m->lengths);
@@ -418,6 +403,7 @@ int NAME(KEY_T) (
 		memset(m, 0, sizeof(*m));
 	    }
 
+	    /* communication-computation overlap */
 	    int CCO = 0;
 	    READENV(CCO, atoi);
 
@@ -475,10 +461,11 @@ int NAME(KEY_T) (
 	assert(global_start[first] >= 0);
 	assert(recvstart_rank[r] >= 0);
 
-	assert(dst - recvkeys + first_count <= recvcount);
-
 	if (first >= 0)
+	{
+	    assert(dst - recvkeys + first_count <= recvcount);
 	    dst += fill(keyrange.begin + first, first_count, dst);
+	}
 
 	for(ptrdiff_t i = first + 1; i < last; ++i)
 	{
@@ -486,10 +473,11 @@ int NAME(KEY_T) (
 	    dst += fill(keyrange.begin + i, global_start[i + 1] - global_start[i], dst);
 	}
 
-	assert(dst - recvkeys + last_count <= recvcount);
-
 	if (last >= 0)
+	{
+	    assert(dst - recvkeys + last_count <= recvcount);
 	    dst += fill(keyrange.begin + last, last_count, dst);
+	}
 
 	assert(dst - recvkeys == recvcount);
     }

@@ -9,10 +9,10 @@ GOALS = mpi-sort vanilla-sort
 
 all : $(GOALS)
 
-vanilla-sort : vanilla.cxx
+vanilla-sort : vanilla-sort.cxx
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-mpi-sort : main.c
+mpi-sort : mpi-sort.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 clean :

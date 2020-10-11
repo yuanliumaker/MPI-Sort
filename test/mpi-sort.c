@@ -135,7 +135,25 @@ int main (
 
     const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
 
-    const MPI_Datatype type = ESZ == 1 ? MPI_UNSIGNED_CHAR : MPI_UNSIGNED_SHORT;
+    MPI_Datatype type;
+
+    if (1 == ESZ)
+	type = MPI_UNSIGNED_CHAR;
+    else if (2 == ESZ)
+	type = MPI_UNSIGNED_SHORT;
+    else if (4 == ESZ)
+	type = MPI_UINT32_T;
+    else
+    {
+	if (!r)
+	    fprintf(stderr,
+		    "ERROR: invalid ESZ (%zd)\n",
+		    ESZ);
+
+	MPI_CHECK(MPI_Finalize());
+
+	return EXIT_FAILURE;
+    }
 
     void * keys = read(argv[1], rangelo, rangec, type);
     assert(keys);
@@ -150,12 +168,18 @@ int main (
 
     double tbegin = MPI_Wtime();
 
-    if (BYKEY)
-	MPI_CHECK(MPI_Sort_bykey(MPI_IN_PLACE, keys, rangec,
-				 type, type,
-				 keys, values, rangec, comm));
-    else
-	MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, type, keys, rangec, comm));
+    int NTIMES = 1;
+    READENV(NTIMES, atoi);
+
+    for (int t = 0; t < NTIMES; ++t)
+    {
+	if (BYKEY)
+	    MPI_CHECK(MPI_Sort_bykey(MPI_IN_PLACE, keys, rangec,
+				     type, type,
+				     keys, values, rangec, comm));
+	else
+	    MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, type, keys, rangec, comm));
+    }
 
     double tend = MPI_Wtime();
 
@@ -170,6 +194,8 @@ int main (
 	MPI_File f;
 	MPI_CHECK(MPI_File_open
 		  (comm, argv[2], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
+
+	MPI_CHECK(MPI_File_set_size(f, ec * ESZ));
 
 	MPI_CHECK(MPI_File_write_at_all
 		  (f, rangelo * ESZ, keys, rangec, type, MPI_STATUS_IGNORE));

@@ -1,8 +1,5 @@
 #include <stddef.h>
 
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-
 typedef struct { ptrdiff_t begin, end; } range_t;
 
 ptrdiff_t exscan_inplace (
