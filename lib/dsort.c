@@ -16,6 +16,7 @@
 #define NAME(x) CAT(dsort_, x)
 
 int NAME(KEY_T) (
+    const int stable,
     const KEY_T * sendkeys,
     const void * sendvals0,
     const void * sendvals1,
@@ -233,7 +234,6 @@ int NAME(KEY_T) (
 	    if (recvvals1)
 		MPI_CHECK(MPI_Type_size(valtype1, &esz1));
 
-	    printf("SIZES: %zd %zd\n", esz0, esz1);
 	    const ptrdiff_t esz01 = esz0 + esz1;
 
 	    MPI_Datatype VALUE01;
@@ -260,7 +260,7 @@ int NAME(KEY_T) (
 	    {
 		/* post recv */
 		{
-		    const int rsrc = (r + d) % rc;
+		    const int rsrc = stable ? d : (r + d) % rc;
 
 		    const ptrdiff_t mlen = recv_msglen[rsrc];
 
@@ -270,20 +270,20 @@ int NAME(KEY_T) (
 
 			const ptrdiff_t hlen = recv_headlen[rsrc];
 			m->keys = malloc(sizeof(KEY_T) * hlen);
-			MPI_CHECK(MPI_Irecv(m->keys, hlen, MPI_KEY_T, rsrc, 0 + 3 * d, comm, m->requests + 0));
+			MPI_CHECK(MPI_Irecv(m->keys, hlen, MPI_KEY_T, rsrc, 0, comm, m->requests + 0));
 
 			m->lengths = malloc(sizeof(ptrdiff_t) * hlen);
-			MPI_CHECK(MPI_Irecv(m->lengths, hlen, MPI_INT64_T, rsrc, 1 + 3 * d, comm, m->requests + 1));
+			MPI_CHECK(MPI_Irecv(m->lengths, hlen, MPI_INT64_T, rsrc, 1, comm, m->requests + 1));
 
 			const ptrdiff_t mlen = recv_msglen[rsrc];
 			m->values = malloc(esz01 * mlen);
-			MPI_CHECK(MPI_Irecv(m->values, mlen, VALUE01, rsrc, 2 + 3 * d, comm, m->requests + 2));
+			MPI_CHECK(MPI_Irecv(m->values, mlen, VALUE01, rsrc, 2, comm, m->requests + 2));
 		    }
 		}
 
 		/* send */
 		{
-		    const int rdst = (r - d + rc) % rc;
+		    const int rdst = stable ? d : (r - d + rc) % rc;
 
 		    const ptrdiff_t mlen = send_msglen[rdst];
 		    assert(mlen >= 0 && mlen <= sendcount);
@@ -318,9 +318,8 @@ int NAME(KEY_T) (
 			}
 #endif
 
-			MPI_CHECK(MPI_Send(keys, hlen, MPI_KEY_T, rdst, 0 + 3 * d, comm));
-			MPI_CHECK(MPI_Send(lengths, hlen, MPI_INT64_T, rdst, 1 + 3 * d, comm));
-
+			MPI_CHECK(MPI_Send(keys, hlen, MPI_KEY_T, rdst, 0, comm));
+			MPI_CHECK(MPI_Send(lengths, hlen, MPI_INT64_T, rdst, 1, comm));
 
 			void * values = malloc(esz01 * mlen);
 
@@ -346,7 +345,7 @@ int NAME(KEY_T) (
 			    assert(in - in0 == mlen);
 			}
 #endif
-			MPI_CHECK(MPI_Send(values, mlen, VALUE01, rdst, 2 + 3 * d, comm));
+			MPI_CHECK(MPI_Send(values, mlen, VALUE01, rdst, 2, comm));
 
 			free(lengths);
 			free(keys);
@@ -357,7 +356,7 @@ int NAME(KEY_T) (
 
 	    __extension__ void wait_and_update (const int d)
 	    {
-		const int rsrc = (r + d) % rc;
+		const int rsrc = stable ? d : (r + d) % rc;
 
 		if (!recv_msglen[rsrc])
 		    return;
