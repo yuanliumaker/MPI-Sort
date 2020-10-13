@@ -63,6 +63,8 @@ int main (
 		    "usage: %s <uint8|uint16|uint32|float> <path/to/input> <path/to/output>\n",
 		    argv[0]);
 
+	MPI_CHECK(MPI_Finalize());
+
 	return EXIT_FAILURE;
     }
 

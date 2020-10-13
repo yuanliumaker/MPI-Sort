@@ -165,11 +165,25 @@ int MPI_Sort_bykey (
 	{
 	    for (ptrdiff_t i = 0; i < n; ++i)
 	    {
-		uint32_t longbits = inout[i];
+		int32_t intbits = inout[i];
 
-		longbits ^= (longbits >> 31) & 0x7fffffff;
+		intbits ^= (intbits >> 31) & 0x7fffffff;
 
-		inout[i] = longbits;
+		inout[i] = (uint32_t)(intbits - 2147483648ll);
+	    }
+	}
+
+	__extension__ void unflip (
+	    const ptrdiff_t n,
+	    uint32_t * inout )
+	{
+	    for (ptrdiff_t i = 0; i < n; ++i)
+	    {
+		int32_t intbits = inout[i] + 2147483648ll;
+
+		intbits ^= (intbits >> 31) & 0x7fffffff;
+
+		inout[i] = (uint32_t)intbits;
 	    }
 	}
 
@@ -180,13 +194,12 @@ int MPI_Sort_bykey (
 			   MPI_UNSIGNED, valtype, recvkeys, recvvals, recvcount, comm));
 
 	if (recvkeys != sendkeys)
-	    flip(sendcount, (uint32_t *)sendkeys);
+	    unflip(sendcount, (uint32_t *)sendkeys);
 
-	flip(recvcount, recvkeys);
+	unflip(recvcount, recvkeys);
 
 	return MPI_SUCCESS;
     }
-
 
     return MPI_ERR_TYPE;
 }
