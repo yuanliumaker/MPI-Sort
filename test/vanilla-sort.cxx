@@ -75,7 +75,7 @@ int main (
     {
 	cerr << "usage: "
 	     << argv[0]
-	     << "<uint8|uint16|uint32|float> <path/to/file> <path/to/result>"
+	     << "<uint8|uint16|uint32|uint64|float> <path/to/file> <path/to/result>"
 	     << endl;
 
 	return EXIT_FAILURE;
@@ -91,6 +91,8 @@ int main (
 	sortfile<uint16_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("uint32"))
 	sortfile<uint32_t>(argv[2], argv[3]);
+    else if (string(TYPE) == string("uint64"))
+	sortfile<uint64_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("float"))
 	sortfile<float>(argv[2], argv[3]);
     else

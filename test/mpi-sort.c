@@ -60,7 +60,7 @@ int main (
     {
 	if (!r)
 	    fprintf(stderr,
-		    "usage: %s <uint8|uint16|uint32|float> <path/to/input> <path/to/output>\n",
+		    "usage: %s <uint8|uint16|uint32|uint64|float> <path/to/input> <path/to/output>\n",
 		    argv[0]);
 
 	MPI_CHECK(MPI_Finalize());
@@ -86,6 +86,11 @@ int main (
     {
 	esz = 4;
 	type = MPI_UNSIGNED;
+    }
+    else if (!strcmp("uint64", argv[1]))
+    {
+	esz = 8;
+	type = MPI_UNSIGNED_LONG;
     }
     else if (!strcmp("float", argv[1]))
     {
