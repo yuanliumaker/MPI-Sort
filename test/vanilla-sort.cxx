@@ -51,13 +51,20 @@ void sortfile (
 {
     auto&& v = read<T>(psrc);
 
+    auto tbegin = std::chrono::high_resolution_clock::now();
+
     sort(v.begin(), v.end());
+
+    auto tend = std::chrono::high_resolution_clock::now();
+    auto tts = std::chrono::duration_cast<std::chrono::milliseconds>(tend - tbegin).count();
 
     for (ptrdiff_t i = 1; i < v.size(); ++i)
 	if (v[i - 1] > v[i])
 	    cerr << "bad sorting!" << endl;
 
     write<T>(pdst, v);
+
+    cout << "sorted " << v.size() << " entries in " << tts << "ms. Bye." << endl;
 }
 
 int main (
