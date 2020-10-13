@@ -64,26 +64,28 @@ int main (
     const int argc,
     const char * argv [])
 {
-    if (argc != 3)
+    if (argc != 4)
     {
-	cerr << "usage: " << argv[0] << "<path/to/file>  <path/to/result>" << endl;
+	cerr << "usage: "
+	     << argv[0]
+	     << "<uint8|uint16|uint32|float> <path/to/file> <path/to/result>"
+	     << endl;
 
 	return EXIT_FAILURE;
     }
 
-    const char * TYPE = "uint8";
-
-    if (getenv("TYPE"))
-	TYPE = getenv("TYPE");
+    const char * TYPE = argv[1];
 
     cerr << "TYPE=" << TYPE << endl;
 
     if (string(TYPE) == string("uint8"))
-	sortfile<uint8_t>(argv[1], argv[2]);
+	sortfile<uint8_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("uint16"))
-	sortfile<uint16_t>(argv[1], argv[2]);
+	sortfile<uint16_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("uint32"))
-	sortfile<uint32_t>(argv[1], argv[2]);
+	sortfile<uint32_t>(argv[2], argv[3]);
+    else if (string(TYPE) == string("float"))
+	sortfile<float>(argv[2], argv[3]);
     else
     {
 	cerr << "ERROR invalid TYPE" << endl;

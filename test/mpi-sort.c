@@ -45,11 +45,8 @@ int main (
     const int argc,
     const char * argv [])
 {
-    int BYKEY = 0;
-    READENV(BYKEY, atoi);
-
-    ptrdiff_t ESZ = 1;
-    READENV(ESZ, atoi);
+    int BYKEY_CHECK = 0;
+    READENV(BYKEY_CHECK, atoi);
 
     MPI_CHECK(MPI_Init((int *)&argc, (char ***)&argv));
 
@@ -59,111 +56,107 @@ int main (
     MPI_CHECK(MPI_Comm_rank(comm, &r));
     MPI_CHECK(MPI_Comm_size(comm, &rc));
 
-    if (argc != 3)
+    if (argc != 4)
     {
 	if (!r)
 	    fprintf(stderr,
-		    "usage: %s <path/to/input> <path/to/output>\n",
+		    "usage: %s <uint8|uint16|uint32|float> <path/to/input> <path/to/output>\n",
 		    argv[0]);
 
 	return EXIT_FAILURE;
     }
 
-    __extension__ ptrdiff_t count_items (
-	const char * p)
+
+    MPI_Datatype type = -1;
+    ptrdiff_t esz = -1;
+
+    if (!strcmp("uint8", argv[1]))
     {
-	ptrdiff_t retval;
-
-	if (!r)
-	{
-	    MPI_File f;
-	    MPI_CHECK(MPI_File_open(MPI_COMM_SELF, (char *)p,
-				    MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
-
-	    MPI_Offset fsz;
-	    MPI_CHECK(MPI_File_get_size(f, &fsz));
-	    assert(0 == fsz % ESZ);
-
-	    retval = fsz / ESZ;
-
-	    MPI_CHECK(MPI_File_close(&f));
-	}
-
-	MPI_CHECK(MPI_Bcast(&retval, 1, MPI_INT64_T, 0, MPI_COMM_WORLD));
-
-	return retval;
-    }
-
-    __extension__ void * read (
-	const char * const p,
-	const ptrdiff_t s,
-	const ptrdiff_t c,
-	MPI_Datatype t)
-    {
-	MPI_File f = NULL;
-
-	MPI_CHECK(MPI_File_open
-		  (comm, (char *)p, MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
-
-	void * buf = malloc(c * ESZ);
-	assert(buf);
-
-	MPI_CHECK(MPI_File_read_at_all
-		  (f, s * ESZ, buf, c, t, MPI_STATUS_IGNORE));
-
-	MPI_CHECK(MPI_File_close(&f));
-
-	return buf;
-    }
-
-    /* element count */
-    const ptrdiff_t ec = count_items(argv[1]);
-
-    if (!r)
-	printf("processing %zd elements\n", ec);
-
-    /* homogeneous blocksize */
-    const ptrdiff_t bsz = ((ec + rc - 1) / rc);
-    //const ptrdiff_t bsz = ((ec + rc/2 - 1) / (rc/2));
-
-    /* local element range */
-    ptrdiff_t rangelo = (r + 0) * bsz;
-    ptrdiff_t rangehi = (r + 1) * bsz;
-
-    rangehi = MIN(rangehi, ec - 0);
-    rangelo = MIN(rangelo, ec - 0);
-
-    const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
-
-    MPI_Datatype type;
-
-    if (1 == ESZ)
+	esz = 1;
 	type = MPI_UNSIGNED_CHAR;
-    else if (2 == ESZ)
+    }
+    else if (!strcmp("uint16", argv[1]))
+    {
+	esz = 2;
 	type = MPI_UNSIGNED_SHORT;
-    else if (4 == ESZ)
-	type = MPI_UINT32_T;
+    }
+    else if (!strcmp("uint32", argv[1]))
+    {
+	esz = 4;
+	type = MPI_UNSIGNED;
+    }
+    else if (!strcmp("float", argv[1]))
+    {
+	esz = 4;
+	type = MPI_FLOAT;
+    }
     else
     {
 	if (!r)
 	    fprintf(stderr,
-		    "ERROR: invalid ESZ (%zd)\n",
-		    ESZ);
+		    "ERROR: unrecognized type (%s)\n",
+		    argv[1]);
 
 	MPI_CHECK(MPI_Finalize());
 
 	return EXIT_FAILURE;
     }
 
-    void * keys = read(argv[1], rangelo, rangec, type);
-    assert(keys);
+    /* item count */
+    ptrdiff_t ic = 0;
+
+    /* count items */
+    {
+	MPI_File f;
+	MPI_CHECK(MPI_File_open(comm, (char *)argv[2],
+				MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
+
+	MPI_Offset fsz;
+	MPI_CHECK(MPI_File_get_size(f, &fsz));
+	assert(0 == fsz % esz);
+
+	ic = fsz / esz;
+    }
+
+    if (!r)
+	printf("processing %zd elements\n", ic);
+
+    /* homogeneous blocksize */
+    const ptrdiff_t bsz = ((ic + rc - 1) / rc);
+
+    /* local element range */
+    ptrdiff_t rangelo = (r + 0) * bsz;
+    ptrdiff_t rangehi = (r + 1) * bsz;
+
+    rangehi = MIN(rangehi, ic - 0);
+    rangelo = MIN(rangelo, ic - 0);
+
+    const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
+
+    void * keys = NULL;
+
+    /* read keys */
+    {
+	MPI_File f = NULL;
+
+	MPI_CHECK(MPI_File_open
+		  (comm, argv[2], MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
+
+	keys = malloc(rangec * esz);
+	assert(keys);
+
+	MPI_CHECK(MPI_File_read_at_all
+		  (f, rangelo * esz, keys, rangec, type, MPI_STATUS_IGNORE));
+
+	MPI_CHECK(MPI_File_close(&f));
+    }
 
     void * values = NULL;
 
-    if (BYKEY)
+    if (BYKEY_CHECK)
     {
-	values = malloc(rangec * ESZ);
-	memcpy(values, keys, rangec * ESZ);
+	values = malloc(rangec * esz);
+	memcpy(values, keys, rangec * esz);
     }
 
     double tbegin = MPI_Wtime();
@@ -173,7 +166,7 @@ int main (
 
     for (int t = 0; t < NTIMES; ++t)
     {
-	if (BYKEY)
+	if (BYKEY_CHECK)
 	    MPI_CHECK(MPI_Sort_bykey(MPI_IN_PLACE, keys, rangec,
 				     type, type,
 				     keys, values, rangec, comm));
@@ -183,8 +176,8 @@ int main (
 
     double tend = MPI_Wtime();
 
-    if (BYKEY)
-	if (memcmp(keys, values, rangec * ESZ))
+    if (BYKEY_CHECK)
+	if (memcmp(keys, values, rangec * esz))
 	    fprintf(stderr,
 		    "ERROR: rank %d: keys do not match with values.\n",
 		    r);
@@ -193,17 +186,17 @@ int main (
     {
 	MPI_File f;
 	MPI_CHECK(MPI_File_open
-		  (comm, argv[2], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
+		  (comm, argv[3], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
 
-	MPI_CHECK(MPI_File_set_size(f, ec * ESZ));
+	MPI_CHECK(MPI_File_set_size(f, ic * esz));
 
 	MPI_CHECK(MPI_File_write_at_all
-		  (f, rangelo * ESZ, keys, rangec, type, MPI_STATUS_IGNORE));
+		  (f, rangelo * esz, keys, rangec, type, MPI_STATUS_IGNORE));
 
 	MPI_CHECK(MPI_File_close(&f));
     }
 
-    if (BYKEY)
+    if (BYKEY_CHECK)
 	free(values);
 
     free(keys);
@@ -211,7 +204,8 @@ int main (
     MPI_CHECK(MPI_Finalize());
 
     if (!r)
-	printf("%s: sorted %zd entries in %.3f ms. Bye.\n", argv[0], ec, (tend - tbegin) * 1e3);
+	printf("%s: sorted %zd entries in %.3f ms. Bye.\n",
+	       argv[0], ic, (tend - tbegin) * 1e3);
 
     return EXIT_SUCCESS;
 }

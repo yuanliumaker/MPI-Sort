@@ -58,7 +58,6 @@ int MPI_Sort_bykey (
 	    DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 
     if (MPI_UNSIGNED_SHORT == keytype || MPI_UINT16_T == keytype)
-    {
 	if (RADIX)
 	{
 	    ptrdiff_t esz = 0;
@@ -108,10 +107,8 @@ int MPI_Sort_bykey (
 	    return dsort_uint16_t (
 		STABLE, sendkeys, 0, sendvals, sendcount,
 		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
-    }
 
     if (MPI_UNSIGNED == keytype || MPI_UINT32_T == keytype)
-    {
 	if (RADIX)
 	{
 	    ptrdiff_t esz = 0;
@@ -159,7 +156,37 @@ int MPI_Sort_bykey (
 	    return dsort_uint32_t (
 		0, sendkeys, 0, sendvals, sendcount,
 		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
+
+    if (MPI_FLOAT == keytype)
+    {
+	__extension__ void flip (
+	    const ptrdiff_t n,
+	    uint32_t * inout )
+	{
+	    for (ptrdiff_t i = 0; i < n; ++i)
+	    {
+		uint32_t longbits = inout[i];
+
+		longbits ^= (longbits >> 31) & 0x7fffffff;
+
+		inout[i] = longbits;
+	    }
+	}
+
+	flip(sendcount, (uint32_t *)sendkeys);
+
+	MPI_CHECK(
+	    MPI_Sort_bykey(sendkeys, sendvals, sendcount,
+			   MPI_UNSIGNED, valtype, recvkeys, recvvals, recvcount, comm));
+
+	if (recvkeys != sendkeys)
+	    flip(sendcount, (uint32_t *)sendkeys);
+
+	flip(recvcount, recvkeys);
+
+	return MPI_SUCCESS;
     }
+
 
     return MPI_ERR_TYPE;
 }
