@@ -59,7 +59,7 @@ int MPI_Sort_bykey (
 
     DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
 
-    /* shrink types */
+    /* squeeze types into fewer ones */
     {
 	if (MPI_IN_PLACE == sendkeys)
 	    sendkeys = recvkeys;
