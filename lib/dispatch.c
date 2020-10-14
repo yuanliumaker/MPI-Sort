@@ -59,8 +59,35 @@ int MPI_Sort_bykey (
 
     DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
 
-    if (MPI_IN_PLACE == sendkeys)
-	sendkeys = recvkeys;
+    /* shrink types */
+    {
+	if (MPI_IN_PLACE == sendkeys)
+	    sendkeys = recvkeys;
+
+	if (MPI_CHAR == keytype)
+	    keytype = MPI_INT8_T;
+
+	if (MPI_SHORT == keytype)
+	    keytype = MPI_INT16_T;
+
+	if (MPI_INTEGER == keytype)
+	    keytype = MPI_INT32_T;
+
+	if (MPI_LONG == keytype)
+	    keytype = MPI_INT64_T;
+
+	if (MPI_BYTE == keytype)
+	    keytype = MPI_UINT8_T;
+
+	if (MPI_UNSIGNED_SHORT == keytype)
+	    keytype = MPI_UINT16_T;
+
+	if (MPI_UNSIGNED == keytype)
+	    keytype = MPI_UINT32_T;
+
+	if (MPI_UNSIGNED_LONG == keytype)
+	    keytype = MPI_UINT64_T;
+    }
 
     ptrdiff_t esz = 0;
 
@@ -71,12 +98,12 @@ int MPI_Sort_bykey (
 	esz = s;
     }
 
-    if (MPI_UNSIGNED_CHAR == keytype || MPI_INT8_T == keytype || MPI_BYTE == keytype)
+    if (MPI_UINT8_T == keytype)
 	return dsort_uint8_t (
 	    STABLE, sendkeys, 0, sendvals, sendcount,
 	    DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 
-    if (MPI_UNSIGNED_SHORT == keytype || MPI_UINT16_T == keytype)
+    if (MPI_UINT16_T == keytype)
 	if (RADIX)
 	{
 	    /* radix sort upon dsort_uint16_t */
@@ -118,7 +145,7 @@ int MPI_Sort_bykey (
 		STABLE, sendkeys, 0, sendvals, sendcount,
 		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 
-    if (MPI_UNSIGNED == keytype || MPI_UINT32_T == keytype)
+    if (MPI_UINT32_T == keytype)
 	if (RADIX)
 	{
 	    /* radix sort upon dsort_uint16_t */
@@ -158,7 +185,7 @@ int MPI_Sort_bykey (
 		0, sendkeys, 0, sendvals, sendcount,
 		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 
-    if (MPI_UNSIGNED_LONG == keytype || MPI_UINT64_T == keytype)
+    if (MPI_UINT64_T == keytype)
 	/* we enforce radix sort for 64 bit digits */
 	{
 	    __extension__ void extract (
@@ -217,55 +244,62 @@ int MPI_Sort_bykey (
     {
 	__extension__ void flip (
 	    const ptrdiff_t n,
-	    uint32_t * inout )
+	    int32_t * inout )
 	{
 	    for (ptrdiff_t i = 0; i < n; ++i)
-	    {
-		int32_t intbits = inout[i];
-
-		intbits ^= (intbits >> 31) & 0x7fffffff;
-
-		inout[i] = (uint32_t)(intbits - 2147483648ll);
-	    }
+		inout[i] ^= (inout[i] >> 31) & 0x7fffffff;
 	}
 
-	__extension__ void unflip (
-	    const ptrdiff_t n,
-	    uint32_t * inout )
-	{
-	    for (ptrdiff_t i = 0; i < n; ++i)
-	    {
-		int32_t intbits = inout[i] + 2147483648ll;
-
-		intbits ^= (intbits >> 31) & 0x7fffffff;
-
-		inout[i] = (uint32_t)intbits;
-	    }
-	}
-
-	flip(sendcount, (uint32_t *)sendkeys);
+	flip(sendcount, (void *)sendkeys);
 
 	MPI_CHECK(
 	    MPI_Sort_bykey(sendkeys, sendvals, sendcount,
-			   MPI_UNSIGNED, valtype, recvkeys, recvvals, recvcount, comm));
+			   MPI_INTEGER, valtype, recvkeys, recvvals, recvcount, comm));
 
 	if (recvkeys != sendkeys)
-	    unflip(sendcount, (uint32_t *)sendkeys);
+	    flip(sendcount, (void *)sendkeys);
 
-	unflip(recvcount, recvkeys);
+	flip(recvcount, recvkeys);
 
 	return MPI_SUCCESS;
     }
 
-    if (MPI_CHAR == keytype || MPI_SHORT == keytype || MPI_INTEGER == keytype)
+    if (MPI_DOUBLE == keytype)
+    {
+	__extension__ void flip (
+	    const ptrdiff_t n,
+	    int64_t * inout )
+	{
+	    for (ptrdiff_t i = 0; i < n; ++i)
+		inout[i] ^= (inout[i] >> 63) & 0x7fffffffffffffff;
+	}
+
+	flip(sendcount, (void *)sendkeys);
+
+	MPI_CHECK(
+	    MPI_Sort_bykey(sendkeys, sendvals, sendcount,
+			   MPI_INT64_T, valtype, recvkeys, recvvals, recvcount, comm));
+
+	if (recvkeys != sendkeys)
+	    flip(sendcount, (void *)sendkeys);
+
+	flip(recvcount, recvkeys);
+
+	return MPI_SUCCESS;
+    }
+
+    if (MPI_INT8_T == keytype
+	|| MPI_INT16_T == keytype
+	|| MPI_INT32_T == keytype
+	|| MPI_INT64_T == keytype)
     {
 	MPI_CHECK(rmanip_to_unsigned(keytype, sendcount, (void *)sendkeys));
 
 	const MPI_Datatype newtype =
-	    MPI_UNSIGNED_CHAR * (MPI_CHAR == keytype || MPI_INT8_T == keytype)
-	    | MPI_UNSIGNED_SHORT * (MPI_SHORT == keytype || MPI_INT16_T == keytype)
-	    | MPI_UNSIGNED * (MPI_INTEGER == keytype || MPI_INT32_T == keytype)
-	    | MPI_UNSIGNED_LONG * (MPI_LONG == keytype || MPI_INT64_T == keytype);
+	    MPI_UINT8_T * (MPI_INT8_T == keytype)
+	    | MPI_UINT16_T * (MPI_INT16_T == keytype)
+	    | MPI_UINT32_T * (MPI_INT32_T == keytype)
+	    | MPI_UINT64_T * (MPI_INT64_T == keytype);
 
 	MPI_CHECK(MPI_Sort_bykey(sendkeys, sendvals, sendcount, newtype, valtype,
 				 recvkeys, recvvals, recvcount, comm));

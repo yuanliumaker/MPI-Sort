@@ -75,7 +75,7 @@ int main (
     {
 	cerr << "usage: "
 	     << argv[0]
-	     << "<uint8|uint16|uint32|uint64|float> <path/to/file> <path/to/result>"
+	     << "<int8|uint8|int16|uint16|int32|uint32|int64|uint64|float> <path/to/file> <path/to/result>"
 	     << endl;
 
 	return EXIT_FAILURE;
@@ -85,16 +85,26 @@ int main (
 
     cerr << "TYPE=" << TYPE << endl;
 
-    if (string(TYPE) == string("uint8"))
+    if (string(TYPE) == string("int8"))
+	sortfile<int8_t>(argv[2], argv[3]);
+    else if (string(TYPE) == string("uint8"))
 	sortfile<uint8_t>(argv[2], argv[3]);
+    else if (string(TYPE) == string("int16"))
+	sortfile<int16_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("uint16"))
 	sortfile<uint16_t>(argv[2], argv[3]);
+    else if (string(TYPE) == string("int32"))
+	sortfile<int32_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("uint32"))
 	sortfile<uint32_t>(argv[2], argv[3]);
+    else if (string(TYPE) == string("int64"))
+	sortfile<int64_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("uint64"))
 	sortfile<uint64_t>(argv[2], argv[3]);
     else if (string(TYPE) == string("float"))
 	sortfile<float>(argv[2], argv[3]);
+    else if (string(TYPE) == string("double"))
+	sortfile<double>(argv[2], argv[3]);
     else
     {
 	cerr << "ERROR invalid TYPE" << endl;

@@ -21,16 +21,16 @@ ifelse(eval($# >= 4), 1, `foreach(`$1', `$2', shift(shift(shift($@))))')')
        `pushdef(`$1', `$2')_forloop(`$1', `$2', `$3', `$4')popdef(`$1')')
 
 define(`unsigned_types',
-``MPI_UNSIGNED_CHAR, uint8_t',
-`MPI_UNSIGNED_SHORT, uint16_t',
-`MPI_UNSIGNED, uint32_t',
-`MPI_UNSIGNED_LONG, uint64_t'')
+``MPI_UINT8_T, uint8_t',
+`MPI_UINT16_T, uint16_t',
+`MPI_UINT32_T, uint32_t',
+`MPI_UINT64_T, uint64_t'')
 
 define(`signed_to_unsigned_types',
-``MPI_CHAR, int8_t, uint8_t, INT8_MAX',
-`MPI_SHORT, int16_t, uint16_t, INT16_MAX',
-`MPI_INTEGER, int32_t, uint32_t, INT32_MAX',
-`MPI_LONG, int64_t, uint64_t, INT64_MAX'')
+``MPI_INT8_T, int8_t, uint8_t, INT8_MAX',
+`MPI_INT16_T, int16_t, uint16_t, INT16_MAX',
+`MPI_INT32_T, int32_t, uint32_t, INT32_MAX',
+`MPI_INT64_T, int64_t, uint64_t, INT64_MAX'')
 
 define(first, $1)
 define(second, $2)

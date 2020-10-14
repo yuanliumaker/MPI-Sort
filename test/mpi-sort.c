@@ -60,7 +60,7 @@ int main (
     {
 	if (!r)
 	    fprintf(stderr,
-		    "usage: %s <uint8|uint16|uint32|uint64|float> <path/to/input> <path/to/output>\n",
+		    "usage: %s <int8|uint8|int16|uint16|int32|uint32|int64|uint64|float|double> <path/to/input> <path/to/output>\n",
 		    argv[0]);
 
 	MPI_CHECK(MPI_Finalize());
@@ -72,20 +72,40 @@ int main (
     MPI_Datatype type = -1;
     ptrdiff_t esz = -1;
 
-    if (!strcmp("uint8", argv[1]))
+    if (!strcmp("int8", argv[1]))
+    {
+	esz = 1;
+	type = MPI_CHAR;
+    }
+    else if (!strcmp("uint8", argv[1]))
     {
 	esz = 1;
 	type = MPI_UNSIGNED_CHAR;
+    }
+    else if (!strcmp("int16", argv[1]))
+    {
+	esz = 2;
+	type = MPI_SHORT;
     }
     else if (!strcmp("uint16", argv[1]))
     {
 	esz = 2;
 	type = MPI_UNSIGNED_SHORT;
     }
+    else if (!strcmp("int32", argv[1]))
+    {
+	esz = 4;
+	type = MPI_INTEGER;
+    }
     else if (!strcmp("uint32", argv[1]))
     {
 	esz = 4;
 	type = MPI_UNSIGNED;
+    }
+    else if (!strcmp("int64", argv[1]))
+    {
+	esz = 8;
+	type = MPI_LONG;
     }
     else if (!strcmp("uint64", argv[1]))
     {
@@ -96,6 +116,11 @@ int main (
     {
 	esz = 4;
 	type = MPI_FLOAT;
+    }
+    else if (!strcmp("double", argv[1]))
+    {
+	esz = 8;
+	type = MPI_DOUBLE;
     }
     else
     {

@@ -14,7 +14,7 @@ dsort-uint32.o : dsort.c
 	$(CC) $(CFLAGS) -DKEY_T=uint32_t -o $@ -c $<
 
 rmanip.c : rmanip.m4
-	m4 $< > $@
+	m4 $< | indent > $@
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c $<
