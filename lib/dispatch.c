@@ -8,6 +8,16 @@
 
 #include "macros.h"
 
+int rmanip_to_unsigned (
+	 MPI_Datatype type,
+	 const ptrdiff_t count,
+	 void * const inout );
+
+int rmanip_from_unsigned (
+	 MPI_Datatype type,
+	 const ptrdiff_t count,
+	 void * const inout );
+
 #define DECLARE(NAME, TYPE)			\
     int NAME (					\
 	const int stable,			\
@@ -61,7 +71,7 @@ int MPI_Sort_bykey (
 	esz = s;
     }
 
-    if (MPI_UNSIGNED_CHAR == keytype || MPI_INT16_T == keytype || MPI_BYTE == keytype)
+    if (MPI_UNSIGNED_CHAR == keytype || MPI_INT8_T == keytype || MPI_BYTE == keytype)
 	return dsort_uint8_t (
 	    STABLE, sendkeys, 0, sendvals, sendcount,
 	    DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
@@ -243,6 +253,27 @@ int MPI_Sort_bykey (
 	    unflip(sendcount, (uint32_t *)sendkeys);
 
 	unflip(recvcount, recvkeys);
+
+	return MPI_SUCCESS;
+    }
+
+    if (MPI_CHAR == keytype || MPI_SHORT == keytype || MPI_INTEGER == keytype)
+    {
+	MPI_CHECK(rmanip_to_unsigned(keytype, sendcount, (void *)sendkeys));
+
+	const MPI_Datatype newtype =
+	    MPI_UNSIGNED_CHAR * (MPI_CHAR == keytype || MPI_INT8_T == keytype)
+	    | MPI_UNSIGNED_SHORT * (MPI_SHORT == keytype || MPI_INT16_T == keytype)
+	    | MPI_UNSIGNED * (MPI_INTEGER == keytype || MPI_INT32_T == keytype)
+	    | MPI_UNSIGNED_LONG * (MPI_LONG == keytype || MPI_INT64_T == keytype);
+
+	MPI_CHECK(MPI_Sort_bykey(sendkeys, sendvals, sendcount, newtype, valtype,
+				 recvkeys, recvvals, recvcount, comm));
+
+	if (recvkeys != sendkeys)
+	    MPI_CHECK(rmanip_from_unsigned(keytype, sendcount, (void *)sendkeys));
+
+	MPI_CHECK(rmanip_from_unsigned(keytype, recvcount, recvkeys));
 
 	return MPI_SUCCESS;
     }
