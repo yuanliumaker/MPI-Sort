@@ -59,7 +59,7 @@ int MPI_Sort_bykey (
 
     DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
 
-    /* shrink types */
+    /* squeeze types into fewer ones */
     {
 	if (MPI_IN_PLACE == sendkeys)
 	    sendkeys = recvkeys;
@@ -122,7 +122,7 @@ int MPI_Sort_bykey (
 	       ignoring sendcount and recvcount */
 	    dsort_uint8_t (
 		STABLE, tmpk, sendkeys, sendvals, sendcount,
-		MPI_UNSIGNED_SHORT, valtype, 0, tmpv0, tmpv1, recvcount, comm);
+		MPI_UINT16_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
 
 	    /* extract higher half  */
 	    for(ptrdiff_t i = 0; i < recvcount; ++i)
@@ -130,7 +130,7 @@ int MPI_Sort_bykey (
 
 	    dsort_uint8_t (
 		1, tmpk, tmpv0, tmpv1, recvcount,
-		MPI_UNSIGNED_SHORT, valtype, 0, recvkeys, recvvals, recvcount, comm);
+		MPI_UINT16_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
 
 	    if (tmpv1)
 		free(tmpv1);
@@ -162,7 +162,7 @@ int MPI_Sort_bykey (
 
 	    dsort_uint16_t (
 		STABLE, tmpk, sendkeys, sendvals, sendcount,
-		MPI_UNSIGNED, valtype, 0, tmpv0, tmpv1, recvcount, comm);
+		MPI_UINT32_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
 
 	    /* extract higher half */
 	    for(ptrdiff_t i = 0; i < recvcount; ++i)
@@ -170,7 +170,7 @@ int MPI_Sort_bykey (
 
 	    dsort_uint16_t (
 		1, tmpk, tmpv0, tmpv1, recvcount,
-		MPI_UNSIGNED, valtype, 0, recvkeys, recvvals, recvcount, comm);
+		MPI_UINT32_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
 
 	    if (tmpv1)
 		free(tmpv1);
@@ -211,25 +211,25 @@ int MPI_Sort_bykey (
 
 	    dsort_uint16_t(
 		STABLE, tmpk, sendkeys, sendvals, sendcount,
-		MPI_UNSIGNED_LONG, valtype, 0, tmpv0, tmpv1, recvcount, comm);
+		MPI_UINT64_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
 
 	    extract(1, recvcount, tmpv0, tmpk);
 
 	    dsort_uint16_t(
 		1, tmpk, tmpv0, tmpv1, recvcount,
-		MPI_UNSIGNED_LONG, valtype, 0, recvkeys, recvvals, recvcount, comm);
+		MPI_UINT64_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
 
 	    extract(2, recvcount, recvkeys, tmpk);
 
 	    dsort_uint16_t(
 		1, tmpk, recvkeys, recvvals, recvcount,
-		MPI_UNSIGNED_LONG, valtype, 0, tmpv0, tmpv1, recvcount, comm);
+		MPI_UINT64_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
 
 	    extract(3, recvcount, tmpv0, tmpk);
 
 	    dsort_uint16_t(
 		1, tmpk, tmpv0, tmpv1, recvcount,
-		MPI_UNSIGNED_LONG, valtype, 0, recvkeys, recvvals, recvcount, comm);
+		MPI_UINT64_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
 
 	    if (tmpv1)
 		free(tmpv1);
@@ -254,7 +254,7 @@ int MPI_Sort_bykey (
 
 	MPI_CHECK(
 	    MPI_Sort_bykey(sendkeys, sendvals, sendcount,
-			   MPI_INTEGER, valtype, recvkeys, recvvals, recvcount, comm));
+			   MPI_INT32_T, valtype, recvkeys, recvvals, recvcount, comm));
 
 	if (recvkeys != sendkeys)
 	    flip(sendcount, (void *)sendkeys);

@@ -35,10 +35,14 @@ define(`signed_to_unsigned_types',
 define(first, $1)
 define(second, $2)
 define(third, $3)
+
+define(type, uint`'$1`'_t)
+
 divert(0)
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include <mpi.h>
 
@@ -106,49 +110,106 @@ int rmanip_from_unsigned (
 	return MPI_ERR_TYPE;
 }
 
+typedef struct
+{
+	uint64_t minval_old, maxval_old;
+	MPI_Datatype type_new;
+	int err;
+} rmanip_t;
 
-dnl  define(rcontract, `
-dnl static rmanip_t _contract_`'$2 (
-dnl        MPI_Comm comm,
-dnl        const ptrdiff_t count,
-dnl        void * const inout)
-dnl {
-dnl 	$2 minval, maxval;
-dnl 	{
-dnl 	const $2 * const restrict in = inout;
-dnl 	minval = in[0];
-dnl 	maxval = in[0];
-dnl 	for (ptrdiff_t i = 1; i < count; ++i)
-dnl 	{
-dnl 	const $2 val = in[i];
-dnl 	minval = MIN(minval, val);
-dnl 	maxval = MAX(maxval, val);
-dnl 	}
-dnl 	}
-dnl 	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &minval, 1, $1, MPI_MIN, comm));
-dnl 	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &maxval, 1, $1, MPI_MAX, comm));
-dnl
-dnl
-dnl }')
-dnl
-dnl foreach(`rcontract(tuple)', tuple, supported_types)
-dnl
-dnl typedef struct
-dnl {
-dnl 	ptrdiff_t minval_old, maxval_old;
-dnl 	MPI_Datatype type_new;
-dnl 	MPI_Error err;
-dnl } rmanip_t;
-dnl
-dnl
-dnl rmanip_t rmanip_contract_inplace (
-dnl 	 MPI_Comm comm,
-dnl 	 MPI_Datatype type,
-dnl 	 const ptrdiff_t count
-dnl 	 void * const inout)
-dnl {
-dnl 	foreach(`if (first(tuple) == type)
-dnl 		    return _cntrct_`'second(tuple)(comm, count, inout);', tuple, supported_types)
-dnl
-dnl 	return (rmanip_t) { .err = MPI_ERR_TYPE };
-dnl }
+define(rcontract,
+`static rmanip_t _contract_`'type($1) (
+       MPI_Comm comm,
+       const ptrdiff_t count,
+       void * const inout)
+{
+	type($1) minval, maxval;
+	{
+	const type($1) * const restrict in = inout;
+
+	minval = in[0];
+	maxval = in[0];
+
+	for (ptrdiff_t i = 1; i < count; ++i)
+	{
+	const type($1) val = in[i];
+
+	minval = MIN(minval, val);
+	maxval = MAX(maxval, val);
+	}
+	}
+
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &minval, 1, $1, MPI_MIN, comm));
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &maxval, 1, $1, MPI_MAX, comm));
+
+	rmanip_t retval = { .minval_old = minval, .maxval_old = maxval, .err = MPI_SUCCESS };
+
+	const uint64_t rangec = retval.maxval_old - retval.minval_old;
+
+	foreach(`
+	ifelse(eval(bitdepth <= $1),1,
+	if (UINT`'$1`'_MAX >= rangec)
+	{
+		const type($1) * in = inout;
+		type(bitdepth) * out = inout;
+
+		for (ptrdiff_t i = 0; i < count; ++i)
+			out[i] = (type(bitdepth))(in[i] - minval);
+
+		retval.type_new = MPI_INT`'bitdepth`'_T;
+
+		return retval;
+	})', bitdepth, 8, 16, 32, 64)
+}')
+
+foreach(`rcontract(tuple)', tuple, 8, 16, 32, 64)
+
+rmanip_t rmanip_contract (
+	 MPI_Comm comm,
+	 MPI_Datatype type,
+	 const ptrdiff_t count,
+	 void * const inout)
+{
+	foreach(`if (first(tuple) == type)
+		    return _contract_`'second(tuple)(comm, count, inout);', tuple, unsigned_types)
+
+	return (rmanip_t) { .err = MPI_ERR_TYPE };
+}
+
+define(rexpand,
+`static void _expand_`'type($1) (
+	const rmanip_t r,
+       const ptrdiff_t count,
+       void * const inout)
+{
+	const type($1) minval = r.minval_old;
+	const uint64_t rangec = r.maxval_old - r.minval_old;
+
+	foreach(`
+	ifelse(eval(bitdepth <= $1),1,
+	if (UINT`'$1_MAX >= rangec)
+	{
+		const type(bitdepth) * in = inout;
+		type($1) * out = inout;
+
+		for (ptrdiff_t i = 0; i < count; ++i)
+		{
+			const type($1) v = in[i];
+
+			out[i] = v + minval;
+		}
+	})', bitdepth, 8, 16, 32, 64)
+}')
+
+foreach(`rexpand(tuple)', tuple, 8, 16, 32, 64)
+
+void rmanip_expand (
+     	 const rmanip_t r,
+	 MPI_Datatype type,
+	 const ptrdiff_t count,
+	 void * const inout)
+{
+	foreach(`if (first(tuple) == type)
+		    return _expand_`'second(tuple)(r, count, inout);', tuple, unsigned_types)
+
+}
