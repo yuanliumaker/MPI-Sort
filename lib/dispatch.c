@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include <string.h>
 #include <assert.h>
+
 #include <mpi.h>
 
 #include "macros.h"
@@ -31,6 +33,13 @@ DECLARE(dsort_uint32_t, int32_t);
 
 enum { DONTCARE_TYPE = -1 };
 
+static ptrdiff_t getsize(MPI_Datatype t)
+{
+    int s;
+    MPI_CHECK(MPI_Type_size(t, &s));
+    return s;
+}
+
 static int dispatch_unsigned (
     const void * sendkeys,
     const void * sendvals,
@@ -42,6 +51,15 @@ static int dispatch_unsigned (
     const int recvcount,
     MPI_Comm comm)
 {
+    const int vinplace = MPI_IN_PLACE == sendvals;
+
+    if (vinplace)
+    {
+	const ptrdiff_t footprint = getsize(valtype) * (ptrdiff_t)sendcount;
+	sendvals = malloc(footprint);
+	memcpy((void *)sendvals, recvvals, footprint);
+    }
+
     int MPI_SORT_RADIX = 1;
     READENV(MPI_SORT_RADIX, atoi);
 
@@ -86,13 +104,6 @@ static int dispatch_unsigned (
     }
     else /* if RADIX */
     {
-	__extension__ ptrdiff_t getsize(MPI_Datatype t)
-	{
-	    int s;
-	    MPI_CHECK(MPI_Type_size(t, &s));
-	    return s;
-	}
-
 	ptrdiff_t vtsz = 0;
 
 	if (recvvals)
@@ -181,6 +192,9 @@ static int dispatch_unsigned (
 
 	drange_expand(range_new, keytype_old, recvcount, recvkeys);
     }
+
+    if (vinplace)
+	free((void *)sendvals);
 
     return err;
 }
