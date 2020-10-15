@@ -46,7 +46,7 @@ divert(0)
 #include <mpi.h>
 
 #include "macros.h"
-#include "rmanip.h"
+#include "drange.h"
 
 define(to_unsigned, `
 static int _to_`'$3 (
@@ -68,7 +68,7 @@ static int _to_`'$3 (
 
 foreach(`to_unsigned(tuple)', tuple, signed_to_unsigned_types)
 
-int rmanip_to_unsigned (
+int drange_to_unsigned (
 	 MPI_Datatype type,
 	 const ptrdiff_t count,
 	 void * const inout)
@@ -99,7 +99,7 @@ static int _from_`'$3 (
 
 foreach(`from_unsigned(tuple)', tuple, signed_to_unsigned_types)
 
-int rmanip_from_unsigned (
+int drange_from_unsigned (
 	 MPI_Datatype type,
 	 const ptrdiff_t count,
 	 void * const inout)
@@ -111,7 +111,7 @@ int rmanip_from_unsigned (
 }
 
 define(rcontract,
-`static rmanip_t _contract_`'type($1) (
+`static drange_t _contract_`'type($1) (
        MPI_Comm comm,
        const ptrdiff_t count,
        void * const inout)
@@ -135,7 +135,7 @@ define(rcontract,
 	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &minval, 1, MPI_UINT`'$1`'_T, MPI_MIN, comm));
 	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &maxval, 1, MPI_UINT`'$1`'_T, MPI_MAX, comm));
 
-	rmanip_t retval = { .minval_old = minval, .maxval_old = maxval, .type_new = MPI_UINT`'$1`'_T, .err = MPI_SUCCESS };
+	drange_t retval = { .minval_old = minval, .maxval_old = maxval, .type_new = MPI_UINT`'$1`'_T, .err = MPI_SUCCESS };
 
 	const uint64_t rangec = retval.maxval_old - retval.minval_old;
 
@@ -159,7 +159,7 @@ define(rcontract,
 
 foreach(`rcontract(tuple)', tuple, 16, 32, 64)
 
-rmanip_t rmanip_contract (
+drange_t drange_contract (
 	 MPI_Comm comm,
 	 MPI_Datatype type,
 	 const ptrdiff_t count,
@@ -168,14 +168,14 @@ rmanip_t rmanip_contract (
 	foreach(`if (first(tuple) == type)
 		    return _contract_`'second(tuple)(comm, count, inout);', tuple, unsigned_types)
 
-	return (rmanip_t) { .err = MPI_ERR_TYPE };
+	return (drange_t) { .err = MPI_ERR_TYPE };
 }
 
 define(rexpand,
 `static void _expand_`'type($1) (
-	const rmanip_t r,
-       const ptrdiff_t count,
-       void * const inout)
+	const drange_t r,
+	const ptrdiff_t count,
+	void * const inout)
 {
 	const type($1) minval = r.minval_old;
 	const uint64_t rangec = r.maxval_old - r.minval_old;
@@ -200,13 +200,12 @@ define(rexpand,
 
 foreach(`rexpand(tuple)', tuple, 16, 32, 64)
 
-void rmanip_expand (
-     	 const rmanip_t r,
+void drange_expand (
+     	 const drange_t r,
 	 MPI_Datatype type,
 	 const ptrdiff_t count,
 	 void * const inout)
 {
 	foreach(`if (first(tuple) == type)
 		    return _expand_`'second(tuple)(r, count, inout);', tuple, unsigned_types)
-
 }

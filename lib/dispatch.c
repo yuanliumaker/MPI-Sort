@@ -7,7 +7,7 @@
 #include <mpi.h>
 
 #include "macros.h"
-#include "rmanip.h"
+#include "drange.h"
 #include "xtract.h"
 
 #define DECLARE(NAME, TYPE)			\
@@ -51,27 +51,30 @@ static int dispatch_unsigned (
     int MPI_SORT_DRANGE = 1;
     READENV(MPI_SORT_DRANGE, atoi);
 
-    if (MPI_UINT8_T == keytype)
-	return dsort_uint8_t (
-	    MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
-	    DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
-
-    rmanip_t range_new ;
+    drange_t range_new ;
     const MPI_Datatype keytype_old = keytype;
 
     if (MPI_SORT_DRANGE)
     {
-	range_new = rmanip_contract(comm, keytype, sendcount, (void *)sendkeys);
+	range_new = drange_contract(comm, keytype, sendcount, (void *)sendkeys);
+
 	keytype = range_new.type_new;
     }
 
     int err = MPI_ERR_TYPE;
 
-    /* we enforce radix sort for 64 bit digits */
+    /* there is no radix sort for 8 bit integers */
+    MPI_SORT_RADIX = MPI_SORT_RADIX && (MPI_UINT8_T != keytype);
+
+    /* we enforce radix sort for 64 bit integers */
     MPI_SORT_RADIX |= (MPI_UINT64_T == keytype);
 
     if (!MPI_SORT_RADIX)
     {
+	if (MPI_UINT8_T == keytype)
+	    err = dsort_uint8_t (
+		MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
+		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 	if (MPI_UINT16_T == keytype)
 	    err = dsort_uint16_t(
 		MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
@@ -174,14 +177,15 @@ static int dispatch_unsigned (
     if (MPI_SORT_DRANGE)
     {
 	if (sendkeys != recvkeys)
-	    rmanip_expand(range_new, keytype_old, sendcount, (void *)sendkeys);
+	    drange_expand(range_new, keytype_old, sendcount, (void *)sendkeys);
 
-	rmanip_expand(range_new, keytype_old, recvcount, recvkeys);
+	drange_expand(range_new, keytype_old, recvcount, recvkeys);
     }
 
     return err;
 }
 
+__attribute__ ((visibility("default")))
 int MPI_Sort_bykey (
     const void * sendkeys,
     const void * sendvals,
@@ -238,7 +242,7 @@ int MPI_Sort_bykey (
 	|| MPI_INT32_T == keytype
 	|| MPI_INT64_T == keytype)
     {
-	MPI_CHECK(rmanip_to_unsigned(keytype, sendcount, (void *)sendkeys));
+	MPI_CHECK(drange_to_unsigned(keytype, sendcount, (void *)sendkeys));
 
 	const MPI_Datatype newtype =
 	    MPI_UINT8_T * (MPI_INT8_T == keytype)
@@ -250,9 +254,9 @@ int MPI_Sort_bykey (
 				    recvkeys, recvvals, recvcount, comm));
 
 	if (recvkeys != sendkeys)
-	    MPI_CHECK(rmanip_from_unsigned(keytype, sendcount, (void *)sendkeys));
+	    MPI_CHECK(drange_from_unsigned(keytype, sendcount, (void *)sendkeys));
 
-	MPI_CHECK(rmanip_from_unsigned(keytype, recvcount, recvkeys));
+	MPI_CHECK(drange_from_unsigned(keytype, recvcount, recvkeys));
 
 	return MPI_SUCCESS;
     }
@@ -308,6 +312,7 @@ int MPI_Sort_bykey (
     return MPI_ERR_TYPE;
 }
 
+__attribute__((visibility ("default")))
 int MPI_Sort (
     const void * sendbuf,
     const int sendcount,

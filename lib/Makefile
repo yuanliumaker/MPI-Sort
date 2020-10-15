@@ -1,10 +1,11 @@
 CFLAGS += -std=c99
 CFLAGS += -I../include
+CFLAGS += -fvisibility=hidden
 
 libmpi-sort.a : \
 	dispatch.o \
 	common.o \
-	rmanip.o \
+	drange.o \
 	xtract.o \
 	dsort-uint8.o \
 	dsort-uint16.o \
@@ -20,7 +21,7 @@ dsort-uint16.o : dsort.c
 dsort-uint32.o : dsort.c
 	$(CC) $(CFLAGS) -DKEY_T=uint32_t -o $@ -c $<
 
-rmanip.c : rmanip.m4
+drange.c : drange.m4
 	m4 $< | indent > $@
 
 xtract.c : xtract.m4
@@ -30,6 +31,6 @@ xtract.c : xtract.m4
 	$(CC) $(CFLAGS) -c $<
 
 clean :
-	rm -f libmpi-sort.a *.o xtract.c rmanip.c
+	rm -f libmpi-sort.a *.o xtract.c drange.c
 
 .PHONY : clean
