@@ -487,6 +487,11 @@ int NAME(KEY_T) (
 	assert(dst - recvkeys == recvcount);
     }
 
+    free(global_start);
+    free(order);
+    free(start);
+    free(histo);
+
     const double t3 = MPI_Wtime();
 
     {
@@ -505,17 +510,15 @@ int NAME(KEY_T) (
 		return 1e3 * (tend - tbegin);
 	    }
 
+	    const double tinit = tts_ms(t0, t1);
+	    const double tlocal = tts_ms(t1, t2);
+	    const double tremote = tts_ms(t2, t3);
+
 	    if (!r)
 		printf("INIT %g ms LOCALSORT %g ms COMMUNICATION %g ms\n",
-		       tts_ms(t0, t1), tts_ms(t1, t2), tts_ms(t2, t3));
+		       tinit, tlocal, tremote);
 	}
     }
-
-    free(global_start);
-    free(order);
-    free(start);
-    free(histo);
-
 
     return MPI_SUCCESS;
 }
