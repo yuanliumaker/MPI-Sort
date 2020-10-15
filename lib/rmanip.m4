@@ -47,6 +47,7 @@ divert(0)
 #include <mpi.h>
 
 #include "macros.h"
+#include "rmanip.h"
 
 define(to_unsigned, `
 static int _to_`'$3 (
@@ -110,13 +111,6 @@ int rmanip_from_unsigned (
 	return MPI_ERR_TYPE;
 }
 
-typedef struct
-{
-	uint64_t minval_old, maxval_old;
-	MPI_Datatype type_new;
-	int err;
-} rmanip_t;
-
 define(rcontract,
 `static rmanip_t _contract_`'type($1) (
        MPI_Comm comm,
@@ -148,7 +142,7 @@ define(rcontract,
 
 	foreach(`
 	ifelse(eval(bitdepth <= $1),1,
-	if (UINT`'$1`'_MAX >= rangec)
+	if (UINT`'bitdepth`'_MAX >= rangec)
 	{
 		const type($1) * in = inout;
 		type(bitdepth) * out = inout;
