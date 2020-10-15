@@ -80,6 +80,9 @@ int NAME(KEY_T) (
 	MPI_CHECK(MPI_Allgather(&myend, 1, MPI_INT64_T, recvstart_rank + 1, 1, MPI_INT64_T, comm));
     }
 
+    const double t3 = MPI_Wtime();
+    double t4 = t3;
+
     if (recvvals0 || recvvals1)
     {
 	KEY_T * sortedkeys = malloc(sizeof(*sortedkeys) * sendcount);
@@ -229,6 +232,8 @@ int NAME(KEY_T) (
 
 	    free(global_bas);
 	}
+
+	t4 = MPI_Wtime();
 
 	/* send/recv messages around */
 	{
@@ -409,18 +414,18 @@ int NAME(KEY_T) (
 	    }
 
 	    /* communication-computation overlap */
-	    int CCO = 0;
-	    READENV(CCO, atoi);
+	    int MPI_SORT_CCO = 0;
+	    READENV(MPI_SORT_CCO, atoi);
 
 	    for (int d = 0; d < rc; ++d)
 	    {
 		post_and_send(d);
 
-		if (CCO - 1 < d)
-		    wait_and_update(d - CCO);
+		if (MPI_SORT_CCO - 1 < d)
+		    wait_and_update(d - MPI_SORT_CCO);
 
 		if (rc - 1 == d)
-		    for (int i = CCO - 1; i >= 0; --i)
+		    for (int i = MPI_SORT_CCO - 1; i >= 0; --i)
 			wait_and_update(d - i);
 	    }
 
@@ -437,6 +442,8 @@ int NAME(KEY_T) (
 	free(recv_start);
 	free(sortedkeys);
     }
+
+    const double t5 = MPI_Wtime();
 
     if (recvkeys)
     {
@@ -492,13 +499,13 @@ int NAME(KEY_T) (
     free(start);
     free(histo);
 
-    const double t3 = MPI_Wtime();
+    const double t6 = MPI_Wtime();
 
     {
-	int PROFILE = 0;
-	READENV(PROFILE, atoi);
+	int MPI_SORT_PROFILE = 0;
+	READENV(MPI_SORT_PROFILE, atoi);
 
-	if (PROFILE)
+	if (MPI_SORT_PROFILE)
 	{
 	    __extension__ double tts_ms (
 		double tbegin,
@@ -512,11 +519,25 @@ int NAME(KEY_T) (
 
 	    const double tinit = tts_ms(t0, t1);
 	    const double tlocal = tts_ms(t1, t2);
-	    const double tremote = tts_ms(t2, t3);
+	    const double tremote = tts_ms(t2, t6);
+	    const double texscan = tts_ms(t2, t3);
+	    const double tcomminit = tts_ms(t3, t4);
+	    const double tcomm = tts_ms(t4, t5);
+	    const double tfill = tts_ms(t5, t6);
 
 	    if (!r)
-		printf("INIT %g ms LOCALSORT %g ms COMMUNICATION %g ms\n",
-		       tinit, tlocal, tremote);
+	    {
+		printf("%s: INIT %g ms LOCALSORT %g ms REMOTE-COMM %g ms\n",
+		       __FILE__, tinit, tlocal, tremote);
+
+		if (recvvals0 || recvvals1)
+		    printf("%s: EXSCAN %g ms COMM-INIT %g ms COMM-DATA %g ms\n",
+			   __FILE__, texscan, tcomminit, tcomm);
+
+		if (recvkeys)
+		    printf("%s: FILL %g ms\n",
+			   __FILE__, tfill);
+	    }
 	}
     }
 
