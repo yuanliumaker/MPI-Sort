@@ -21,8 +21,7 @@ ifelse(eval($# >= 4), 1, `foreach(`$1', `$2', shift(shift(shift($@))))')')
        `pushdef(`$1', `$2')_forloop(`$1', `$2', `$3', `$4')popdef(`$1')')
 
 define(`unsigned_types',
-``MPI_UINT8_T, uint8_t',
-`MPI_UINT16_T, uint16_t',
+``MPI_UINT16_T, uint16_t',
 `MPI_UINT32_T, uint32_t',
 `MPI_UINT64_T, uint64_t'')
 
@@ -133,15 +132,15 @@ define(rcontract,
 	}
 	}
 
-	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &minval, 1, $1, MPI_MIN, comm));
-	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &maxval, 1, $1, MPI_MAX, comm));
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &minval, 1, MPI_UINT`'$1`'_T, MPI_MIN, comm));
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &maxval, 1, MPI_UINT`'$1`'_T, MPI_MAX, comm));
 
-	rmanip_t retval = { .minval_old = minval, .maxval_old = maxval, .err = MPI_SUCCESS };
+	rmanip_t retval = { .minval_old = minval, .maxval_old = maxval, .type_new = MPI_UINT`'$1`'_T, .err = MPI_SUCCESS };
 
 	const uint64_t rangec = retval.maxval_old - retval.minval_old;
 
 	foreach(`
-	ifelse(eval(bitdepth <= $1),1,
+	ifelse(eval(bitdepth < $1),1,
 	if (UINT`'bitdepth`'_MAX >= rangec)
 	{
 		const type($1) * in = inout;
@@ -150,13 +149,15 @@ define(rcontract,
 		for (ptrdiff_t i = 0; i < count; ++i)
 			out[i] = (type(bitdepth))(in[i] - minval);
 
-		retval.type_new = MPI_INT`'bitdepth`'_T;
+		retval.type_new = MPI_UINT`'bitdepth`'_T;
 
 		return retval;
 	})', bitdepth, 8, 16, 32, 64)
+
+	return retval;
 }')
 
-foreach(`rcontract(tuple)', tuple, 8, 16, 32, 64)
+foreach(`rcontract(tuple)', tuple, 16, 32, 64)
 
 rmanip_t rmanip_contract (
 	 MPI_Comm comm,
@@ -180,8 +181,8 @@ define(rexpand,
 	const uint64_t rangec = r.maxval_old - r.minval_old;
 
 	foreach(`
-	ifelse(eval(bitdepth <= $1),1,
-	if (UINT`'$1_MAX >= rangec)
+	ifelse(eval(bitdepth < $1),1,
+	if (UINT`'bitdepth`'_MAX >= rangec)
 	{
 		const type(bitdepth) * in = inout;
 		type($1) * out = inout;
@@ -192,10 +193,12 @@ define(rexpand,
 
 			out[i] = v + minval;
 		}
+
+		return;
 	})', bitdepth, 8, 16, 32, 64)
 }')
 
-foreach(`rexpand(tuple)', tuple, 8, 16, 32, 64)
+foreach(`rexpand(tuple)', tuple, 16, 32, 64)
 
 void rmanip_expand (
      	 const rmanip_t r,

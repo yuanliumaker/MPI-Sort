@@ -29,6 +29,8 @@ int NAME(KEY_T) (
     const int recvcount,
     MPI_Comm comm)
 {
+    const double t0 = MPI_Wtime();
+
     DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
 
     int r, rc;
@@ -55,9 +57,13 @@ int NAME(KEY_T) (
     DIE_UNLESS(start = malloc(keyrange_count * sizeof(*start)));
     DIE_UNLESS(order = malloc(sendcount * sizeof(*order)));
 
+    const double t1 = MPI_Wtime();
+
     /* local sort */
     const ptrdiff_t local_count =
 	counting_sort(keyrange.begin, keyrange.end, sendcount, sendkeys, histo, start, order);
+
+    const double t2 = MPI_Wtime();
 
     /* exclusive scan of global histogram */
     ptrdiff_t * global_start = malloc(keyrange_count * sizeof(*global_start));
@@ -481,10 +487,35 @@ int NAME(KEY_T) (
 	assert(dst - recvkeys == recvcount);
     }
 
+    const double t3 = MPI_Wtime();
+
+    {
+	int PROFILE = 0;
+	READENV(PROFILE, atoi);
+
+	if (PROFILE)
+	{
+	    __extension__ double tts_ms (
+		double tbegin,
+		double tend )
+	    {
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &tbegin, 1, MPI_DOUBLE, MPI_MIN, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &tend  , 1, MPI_DOUBLE, MPI_MAX, comm));
+
+		return 1e3 * (tend - tbegin);
+	    }
+
+	    if (!r)
+		printf("INIT %g ms LOCALSORT %g ms COMMUNICATION %g ms\n",
+		       tts_ms(t0, t1), tts_ms(t1, t2), tts_ms(t2, t3));
+	}
+    }
+
     free(global_start);
     free(order);
     free(start);
     free(histo);
+
 
     return MPI_SUCCESS;
 }

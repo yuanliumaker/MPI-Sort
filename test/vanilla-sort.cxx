@@ -64,7 +64,7 @@ void sortfile (
 
     write<T>(pdst, v);
 
-    cout << "sorted " << v.size() << " entries in " << tts << "ms. Bye." << endl;
+    cout << "sorted " << v.size() << " entries in " << tts << " ms. Bye." << endl;
 }
 
 int main (

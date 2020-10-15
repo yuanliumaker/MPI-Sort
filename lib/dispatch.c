@@ -46,11 +46,18 @@ static int dispatch_unsigned (
 
     int STABLE = 0;
     READENV(STABLE, atoi);
-    STABLE = !!STABLE;
+
+    int CONTRACTION = 1;
+    READENV(CONTRACTION, atoi);
 
     const MPI_Datatype keytype_old = keytype;
-    rmanip_t range_new = rmanip_contract(comm, keytype, sendcount, (void *)sendkeys);
-    keytype = range_new.type_new;
+    rmanip_t range_new ;
+
+    if (CONTRACTION)
+    {
+	range_new = rmanip_contract(comm, keytype, sendcount, (void *)sendkeys);
+	keytype = range_new.type_new;
+    }
 
     int err = MPI_ERR_TYPE;
 
@@ -113,6 +120,7 @@ static int dispatch_unsigned (
     if (MPI_UINT32_T == keytype)
 	if (RADIX)
 	{
+	    //printf("hello rmanip: %zd %zd\n", range_new.minval_old, range_new.maxval_old);
 	    /* radix sort upon dsort_uint16_t */
 	    uint16_t * tmpk = malloc(sizeof(uint16_t) * MAX(recvcount, sendcount));
 	    void * tmpv0 = malloc(sizeof(uint32_t) * recvcount);
@@ -205,10 +213,13 @@ static int dispatch_unsigned (
 	    err = MPI_SUCCESS;
 	}
 
-    if (sendkeys != recvkeys)
-	rmanip_expand(range_new, keytype_old, sendcount, (void *)sendkeys);
+    if (CONTRACTION)
+    {
+	if (sendkeys != recvkeys)
+	    rmanip_expand(range_new, keytype_old, sendcount, (void *)sendkeys);
 
-    rmanip_expand(range_new, keytype_old, recvcount, recvkeys);
+	rmanip_expand(range_new, keytype_old, recvcount, recvkeys);
+    }
 
     return err;
 }
@@ -260,9 +271,9 @@ int MPI_Sort_bykey (
 	|| MPI_UINT16_T == keytype
 	|| MPI_UINT32_T == keytype
 	|| MPI_UINT64_T == keytype)
-	MPI_CHECK(dispatch_unsigned(sendkeys, sendvals, sendcount,
-				keytype, valtype,
-				recvkeys, recvvals, recvcount, comm));
+	return dispatch_unsigned(sendkeys, sendvals, sendcount,
+				 keytype, valtype,
+				 recvkeys, recvvals, recvcount, comm);
 
     if (MPI_INT8_T == keytype
 	|| MPI_INT16_T == keytype

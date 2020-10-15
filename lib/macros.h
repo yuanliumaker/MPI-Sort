@@ -31,7 +31,7 @@
 	if (!(stmt))					\
 	{						\
 	    fprintf(stderr,				\
-		    "DIED AT" #stmt			\
+		    "DIED AT " #stmt			\
 		    "(%s:%d)\n", __FILE__, __LINE__);	\
 							\
 	    exit(EXIT_FAILURE);				\
