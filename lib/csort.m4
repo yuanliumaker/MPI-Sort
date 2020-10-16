@@ -5,10 +5,6 @@ define(`_forloop',
        `$4`'ifelse($1, `$3', `', `define(`$1', incr($1))$0($@)')')
 divert(0)
 
-define(N, 8)
-
-define(M, eval(1<<16))
-
 static ptrdiff_t counting_sort (
     const unsigned int minval,
     const unsigned int supval,
@@ -24,7 +20,7 @@ static ptrdiff_t counting_sort (
     {
 	const ptrdiff_t nicecount = ifelse(eval((N & (N - 1)) == 0), 1, `samplecount & ~eval(N-1)', `N * (samplecount / N)');
 
-    	uint32_t h[65537];
+    	uint32_t h[eval((1 << BITCOUNT) + 1)];
     	memset(h, 0, sizeof(h));
 
     	for (int i = 0; i < nicecount; i += N)

@@ -37,10 +37,10 @@ static ptrdiff_t exscan (
 #include <stdlib.h>
 #include <assert.h>
 
-#ifdef _TUNED_
-#if (KEY_T == uint16_t)
+#if (_BITCOUNT_ == 8) && defined(_TUNED_)
+#include "csort-tuned-u8.h"
+#elif (_BITCOUNT_ == 16) && defined(_TUNED_)
 #include "csort-tuned-u16.h"
-#endif
 #else
 static ptrdiff_t counting_sort (
     const unsigned int minval,

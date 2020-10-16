@@ -71,7 +71,6 @@ static int dispatch_unsigned (
 
     drange_t range_new ;
     const MPI_Datatype keytype_old = keytype;
-
     if (MPI_SORT_DRANGE)
     {
 	range_new = drange_contract(comm, keytype, sendcount, (void *)sendkeys);
@@ -81,10 +80,13 @@ static int dispatch_unsigned (
 
     int err = MPI_ERR_TYPE;
 
-    /* there is no radix sort for 8 bit integers */
+    /* there is no radix sort for 8 bits integers */
     MPI_SORT_RADIX = MPI_SORT_RADIX * (MPI_UINT8_T != keytype);
 
-    /* we enforce radix sort for 64 bit integers */
+    /* we discourage radix sort for 16 bits integers */
+    MPI_SORT_RADIX -= (MPI_UINT16_T == keytype);
+
+    /* we enforce radix sort for 64 bits integers */
     MPI_SORT_RADIX |= (MPI_UINT64_T == keytype);
 
     if (!MPI_SORT_RADIX)
@@ -232,6 +234,9 @@ int MPI_Sort_bykey (
 	    keytype = MPI_INT64_T;
 
 	if (MPI_BYTE == keytype)
+	    keytype = MPI_UINT8_T;
+
+	if (MPI_UNSIGNED_CHAR == keytype)
 	    keytype = MPI_UINT8_T;
 
 	if (MPI_UNSIGNED_SHORT == keytype)
