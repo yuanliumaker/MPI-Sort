@@ -26,5 +26,11 @@ int MPI_Sort_bykey (
     MPI_Comm comm);
 ```
 
-* Compilation
-Example: `CFLAGS=" -march=core-avx2 -Ofast -DNDEBUG " make -C lib`
+# Compilation
+Optimization flags have to be passed to the makefile via environment variables.
+For example: `CC=mpicc CFLAGS=" -march=core-avx2 -Ofast -DNDEBUG " make -C lib`
+The makefile in the lib/ subfolder generates both a static and dynamic version of the library.
+
+# Tests
+Tests have to be compiled in a similar way as lib.
+For example: `CXX=mpicxx CXXFLAGS=" -march=core-avx2 -Ofast -DNDEBUG" CC=mpicc CFLAGS=" -march=core-avx2 -Ofast -DNDEBUG"`
