@@ -416,6 +416,10 @@ int NAME(KEY_T) (
 	    /* communication-computation overlap */
 	    int MPI_SORT_CCO = 0;
 	    READENV(MPI_SORT_CCO, atoi);
+	    MPI_SORT_CCO = MIN(MPI_SORT_CCO, rc);
+
+	    if (0 > MPI_SORT_CCO)
+		MPI_SORT_CCO = rc;
 
 	    for (int d = 0; d < rc; ++d)
 	    {

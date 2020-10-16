@@ -82,7 +82,7 @@ static int dispatch_unsigned (
     int err = MPI_ERR_TYPE;
 
     /* there is no radix sort for 8 bit integers */
-    MPI_SORT_RADIX = MPI_SORT_RADIX && (MPI_UINT8_T != keytype);
+    MPI_SORT_RADIX = MPI_SORT_RADIX * (MPI_UINT8_T != keytype);
 
     /* we enforce radix sort for 64 bit integers */
     MPI_SORT_RADIX |= (MPI_UINT64_T == keytype);
@@ -99,7 +99,7 @@ static int dispatch_unsigned (
 		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 	else if (MPI_UINT32_T == keytype)
 	    err = dsort_uint32_t(
-		0, sendkeys, 0, sendvals, sendcount,
+		MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
 		DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
     }
     else /* if RADIX */
@@ -114,7 +114,8 @@ static int dispatch_unsigned (
 	/* TODO: intermediate results should be partitioned homogenously,
 	   ignoring sendcount and recvcount */
 	void * tmpk = malloc
-	    ((MPI_INT16_T == keytype ? sizeof(uint8_t) : sizeof(uint16_t)) * MAX(recvcount, sendcount));
+	    ((MPI_INT16_T == keytype ? sizeof(uint8_t) : sizeof(uint16_t))
+	     * MAX(recvcount, sendcount));
 
 	void * tmpv0 = malloc(ktsz * recvcount);
 	void * tmpv1 = recvvals ? malloc(vtsz * recvcount) : NULL;

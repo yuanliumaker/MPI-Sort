@@ -15,5 +15,6 @@ divert(0)
 #include "xtract.h"
 
 kernel(8, 16)
+dnl kernel(8, 32)
 kernel(16, 32)
 kernel(16, 64)
