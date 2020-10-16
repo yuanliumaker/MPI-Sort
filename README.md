@@ -1,8 +1,10 @@
 # mpi-sort
 
-MPI_Sort and MPI_Sort_bykey are kindly brought to you by a broken shoulder and a 2 weeks sick note
+MPI_Sort and MPI_Sort_bykey are kindly brought to you by a broken shoulder and a 2 weeks sick note.
+The library exposes two functions:
 
-```#include <mpi.h>
+```c
+#include <mpi.h>
 
 int MPI_Sort (
     const void * sendbuf,
@@ -23,3 +25,6 @@ int MPI_Sort_bykey (
     const int recvcount,
     MPI_Comm comm);
 ```
+
+* Compilation
+Example: `CFLAGS=" -march=core-avx2 -Ofast -DNDEBUG " make -C lib`
