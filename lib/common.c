@@ -57,6 +57,7 @@ ptrdiff_t lowerbound (
 	const ptrdiff_t * restrict const idx,	\
 	T * restrict const out )		\
     {						\
+	_Pragma("GCC unroll (4)")		\
 	for (ptrdiff_t i = 0; i < count; ++i)	\
 	    out[i] = in[idx[i]];		\
     }

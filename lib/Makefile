@@ -24,8 +24,8 @@ libmpi-sort.so : $(OBJS)
 dsort-uint8.o : dsort.c
 	$(CC) $(CFLAGS) -DKEY_T=uint8_t -o $@ -c $<
 
-dsort-uint16.o : dsort.c
-	$(CC) $(CFLAGS) -DKEY_T=uint16_t -o $@ -c $<
+dsort-uint16.o : dsort.c csort-tuned-u16.h
+	$(CC) $(CFLAGS) -DKEY_T=uint16_t -D_TUNED_ -o $@ -c $<
 
 dsort-uint32.o : dsort.c
 	$(CC) $(CFLAGS) -DKEY_T=uint32_t -o $@ -c $<
@@ -36,10 +36,13 @@ drange.c : drange.m4
 xtract.c : xtract.m4
 	m4 $< > $@
 
+csort-tuned-u16.h : csort.m4
+	m4 $< > $@
+
 %.o : %.c
 	$(CC) $(CFLAGS) -c $<
 
 clean :
-	rm -f $(GOALS) *.o xtract.c drange.c
+	rm -f $(GOALS) *.o xtract.c drange.c csort-tuned-u16.h
 
 .PHONY : clean

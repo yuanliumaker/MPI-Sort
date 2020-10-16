@@ -37,9 +37,14 @@ static ptrdiff_t exscan (
 #include <stdlib.h>
 #include <assert.h>
 
+#ifdef _TUNED_
+#if (KEY_T == uint16_t)
+#include "csort-tuned-u16.h"
+#endif
+#else
 static ptrdiff_t counting_sort (
-    const int minval,
-    const int supval,
+    const unsigned int minval,
+    const unsigned int supval,
     const ptrdiff_t samplecount,
     const KEY_T * const restrict samples,
     ptrdiff_t * const restrict histo,
@@ -48,11 +53,13 @@ static ptrdiff_t counting_sort (
 {
     const int d = supval - minval;
 
+#ifndef NDEBUG
     for (ptrdiff_t i = 0; i < samplecount; ++i)
     {
 	const int s = samples[i] - minval;
 	assert(s >= 0 && s < d);
     }
+#endif
 
     for (ptrdiff_t i = 0; i < samplecount; ++i)
 	++histo[samples[i] - minval];
@@ -64,6 +71,7 @@ static ptrdiff_t counting_sort (
 
     return exscan(d, histo, start);
 }
+#endif
 
 static ptrdiff_t rle (
     const KEY_T * const restrict in,
