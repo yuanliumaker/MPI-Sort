@@ -22,7 +22,7 @@ static ptrdiff_t counting_sort (
 
     if (samplecount < (1ull << 32))
     {
-	const ptrdiff_t nicecount = N * (samplecount / N);
+	const ptrdiff_t nicecount = ifelse(eval((N & (N - 1)) == 0), 1, `samplecount & ~eval(N-1)', `N * (samplecount / N)');
 
     	uint32_t h[65537];
     	memset(h, 0, sizeof(h));
