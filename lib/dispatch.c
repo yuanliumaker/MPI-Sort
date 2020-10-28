@@ -264,11 +264,11 @@ int MPI_Sort_bykey (
     {
 	MPI_CHECK(drange_to_unsigned(keytype, sendcount, (void *)sendkeys));
 
-	const MPI_Datatype newtype =
-	    MPI_UINT8_T * (MPI_INT8_T == keytype)
-	    | MPI_UINT16_T * (MPI_INT16_T == keytype)
-	    | MPI_UINT32_T * (MPI_INT32_T == keytype)
-	    | MPI_UINT64_T * (MPI_INT64_T == keytype);
+	const MPI_Datatype newtype = (MPI_Datatype)
+	    ( (ptrdiff_t)MPI_UINT8_T * (MPI_INT8_T == keytype)
+	    | (ptrdiff_t)MPI_UINT16_T * (MPI_INT16_T == keytype)
+	    | (ptrdiff_t)MPI_UINT32_T * (MPI_INT32_T == keytype)
+	    | (ptrdiff_t)MPI_UINT64_T * (MPI_INT64_T == keytype));
 
 	MPI_CHECK(dispatch_unsigned(sendkeys, sendvals, sendcount, newtype, valtype,
 				    recvkeys, recvvals, recvcount, comm));

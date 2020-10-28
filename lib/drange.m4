@@ -168,6 +168,10 @@ drange_t drange_contract (
 	foreach(`if (first(tuple) == type)
 		    return _contract_`'second(tuple)(comm, count, inout);', tuple, unsigned_types)
 
+	/* bypass range contraction for uint8_t */
+	if (MPI_UINT8_T == type)
+	   return (drange_t){ .minval_old = 0, .maxval_old = 255, .type_new = MPI_UINT8_T, .err = MPI_SUCCESS };
+
 	return (drange_t) { .err = MPI_ERR_TYPE };
 }
 
@@ -187,7 +191,7 @@ define(rexpand,
 		const type(bitdepth) * in = inout;
 		type($1) * out = inout;
 
-		for (ptrdiff_t i = 0; i < count; ++i)
+		for (ptrdiff_t i = count - 1; i >= 0; --i)
 		{
 			const type($1) v = in[i];
 
