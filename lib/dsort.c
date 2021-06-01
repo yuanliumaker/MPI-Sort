@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include <math.h>
 #include <assert.h>
 #include <string.h>
 
@@ -289,7 +290,9 @@ int NAME(KEY_T) (
 
 			memset(recv_msg, 0, sizeof(recv_msg));
 
-			__extension__ void post_and_send (const int d)
+			__extension__ void post_and_send (
+				const int d,
+				MPI_Request * reqs)
 			{
 				/* post recv */
 				{
@@ -351,9 +354,16 @@ int NAME(KEY_T) (
 							ASSERT_SUM(mlen, runcount, lengths);
 						}
 #endif
-
-						MPI_CHECK(MPI_Send(keys, hlen, MPI_KEY_T, rdst, 0, comm));
-						MPI_CHECK(MPI_Send(lengths, hlen, MPI_INT64_T, rdst, 1, comm));
+						if (reqs)
+						{
+							MPI_CHECK(MPI_Isend(keys, hlen, MPI_KEY_T, rdst, 0, comm, reqs + 0));
+							MPI_CHECK(MPI_Isend(lengths, hlen, MPI_INT64_T, rdst, 1, comm, reqs + 1));
+						}
+						else
+						{
+							MPI_CHECK(MPI_Send(keys, hlen, MPI_KEY_T, rdst, 0, comm));
+							MPI_CHECK(MPI_Send(lengths, hlen, MPI_INT64_T, rdst, 1, comm));
+						}
 
 						void * values = malloc(esz01 * mlen);
 
@@ -379,8 +389,11 @@ int NAME(KEY_T) (
 							assert(in - in0 == mlen);
 						}
 #endif
-						MPI_CHECK(MPI_Send(values, mlen, VALUE01, rdst, 2, comm));
-
+						if (reqs)
+							MPI_CHECK(MPI_Isend(values, mlen, VALUE01, rdst, 2, comm, reqs + 2));
+						else
+							MPI_CHECK(MPI_Send(values, mlen, VALUE01, rdst, 2, comm));
+						
 						free(lengths);
 						free(keys);
 						free(values);
@@ -437,6 +450,7 @@ int NAME(KEY_T) (
 			}		
 
 			if (stable)
+#if 0
 				for (int d = 0; d < rc; ++d)
 				{
 					MPI_CHECK(MPI_Barrier(comm));
@@ -559,6 +573,277 @@ int NAME(KEY_T) (
 
 					free(positions);
 				}
+#elif 1 /* Allgather + large messages attempt */
+			{
+				int MPI_SORT_VERBOSE = 0;
+				READENV(MPI_SORT_VERBOSE, atoi);
+
+				MPI_SORT_VERBOSE &= !r;
+				
+				ptrdiff_t msglen_homo;
+				
+				/* compute average 95-percentiles of the message sizes first */
+				{
+					ptrdiff_t sizes[rc];
+					memcpy(sizes, send_msglen, sizeof(sizes));
+
+					__extension__ int compar(const void * a, const void * b) { return *(ptrdiff_t *)a - *(ptrdiff_t *)b; }
+					qsort(sizes, rc, sizeof(*sizes), compar);
+
+					msglen_homo = sizes[MAX(0, MIN(rc - 1, (int)round(0.95 * rc)))];
+
+					MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_SUM, comm));
+					msglen_homo /= rc;
+					
+					if (MPI_SORT_VERBOSE)
+						printf("msglen_homo = %zd\n", msglen_homo);
+				}
+
+				KEY_T * dst = recvkeys;
+
+				if (!dst)
+					dst = malloc(sizeof(*dst) * recvcount);
+
+				KEY_T * pdst = dst;
+					
+				/* send around keys via A2A */
+				{
+					const double t0 = MPI_Wtime();
+
+					if (!r)
+						printf("all to all begins...\n");
+					
+					enum { SENDCOUNT = 128 / sizeof(KEY_T) };
+
+					KEY_T * sendbuf = malloc(sizeof(KEY_T) * SENDCOUNT * rc);
+					KEY_T * recvbuf = malloc(sizeof(KEY_T) * SENDCOUNT * rc);
+					
+					for (ptrdiff_t base = 0; base < msglen_homo; base += SENDCOUNT)
+					{
+						if (base / SENDCOUNT % 10 == 0)
+							if (!r)
+								printf("exchanging data... base %zd of msglen_homo %zd (t %g s)\n",
+									   base, msglen_homo, MPI_Wtime() - t0);
+						
+						/* real send count, at last can be less than SENDCOUNT */
+						const ptrdiff_t n = MIN(SENDCOUNT, msglen_homo - base);
+
+						/* populate send buffer */
+						for (ptrdiff_t rr = 0; rr < rc; ++rr)
+							if (base < send_msglen[rr])
+								memcpy(sendbuf + n * rr,
+									   sortedkeys + send_msgstart[rr] + base,
+									   sizeof(KEY_T) * MIN(n, send_msglen[rr] - base));
+						
+						MPI_CHECK(MPI_Alltoall(sendbuf, n, MPI_KEY_T, recvbuf, n, MPI_KEY_T, comm));
+
+						/* unpack recv buffer -- it may contain unused/invalid entries */
+						for (ptrdiff_t rr = 0; rr < rc; ++rr)
+							if (base < recv_msglen[rr])
+							{
+								const ptrdiff_t c = MIN(n, recv_msglen[rr] - base);
+								memcpy(pdst, recvbuf + n * rr, sizeof(KEY_T) * c);
+								pdst += c;
+								}
+					}
+										
+					free(recvbuf);
+					free(sendbuf);
+
+					const double t1 = MPI_Wtime();
+					MPI_CHECK(MPI_Barrier(comm));
+					if (!r)
+						printf("all to all done in %g s\n", t1 - t0);
+
+					fflush(stdout);
+					MPI_CHECK(MPI_Barrier(comm));
+				}
+
+				/* recv/send the remaining keys via P2P */
+				{
+					if (!r)
+						printf("sending now remaining messages...\n");
+					MPI_CHECK(MPI_Barrier(comm));
+					const double t0 = MPI_Wtime();					
+					int rrc = 0, src = 0;
+					MPI_Request recvreq[rc],sendreq[rc];
+
+					/* receive request count and send request count */
+					
+					/* recv first */
+					for (int rr = 0; rr < rc; ++rr)
+					{
+						const ptrdiff_t rem = recv_msglen[rr] - msglen_homo;
+
+						if (rem > 0)
+						{
+							MPI_CHECK(MPI_Irecv(pdst, rem, MPI_KEY_T, rr, rr + rc * r, comm, recvreq + rrc++));
+							pdst += rem;
+						}
+					}
+
+					/* now send */
+					for (int rr = 0; rr < rc; ++rr)
+					{
+						const ptrdiff_t rem = send_msglen[rr] - msglen_homo;
+
+						if (rem > 0)
+							MPI_CHECK(MPI_Send(sortedkeys + send_msgstart[rr] + msglen_homo, rem, MPI_KEY_T,
+											   rr, r + rc * rr, comm));
+					}
+
+					/* wait now for receiving all messages */
+					MPI_CHECK(MPI_Waitall(rrc, recvreq, MPI_STATUSES_IGNORE));
+
+					
+										MPI_CHECK(MPI_Barrier(comm));
+										const double t1 = MPI_Wtime();`
+					if (!r)
+						printf("all to all done in %g s\n", t1 - t0);
+
+					fflush(stdout);
+					MPI_CHECK(MPI_Barrier(comm));
+
+				}
+				
+				if (dst != recvkeys)
+				{
+					free(dst);
+					dst = NULL;
+				}
+				
+				MPI_CHECK(MPI_Barrier(comm));
+				fflush(stdout);
+				MPI_CHECK(MPI_Barrier(comm));
+				exit(0);
+			}
+			
+#elif 0 /* Allgatherv attempt */
+			{
+				int sendcounts[rc], sdispls[rc], recvcounts[rc], rdispls[rc + 1];
+
+				__extension__ void _int (
+					int * const out,
+					const ptrdiff_t * const in )
+				{
+					for (int i = 0; i < rc; ++i)
+						out[i] = in[i];
+				}
+
+				__extension__ ptrdiff_t _max (
+					const ptrdiff_t * const in)
+				{
+					ptrdiff_t retval = in[0];
+
+					for (int i = 1; i < rc; ++i)
+						retval = MAX(retval, in[i]);
+
+					MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &retval, 1, MPI_INT64_T, MPI_MAX, comm));
+					
+					return retval;
+				}
+				
+				_int(sendcounts, send_msglen);
+				_int(sdispls, send_msgstart);
+				_int(recvcounts, recv_msglen);
+					{
+		MPI_File f;
+		MPI_CHECK(MPI_File_open
+				  (comm, "sendsizes-int32.raw", MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
+
+		MPI_CHECK(MPI_File_set_size(f, rc * rc * sizeof(int)));
+
+		MPI_CHECK(MPI_File_write_at_all
+				  (f, sizeof(int) * rc * r, sendcounts, rc, MPI_INT, MPI_STATUS_IGNORE));
+
+		MPI_CHECK(MPI_File_close(&f));
+	}
+
+				//printf("my recv pointer is 0x%p\n", recvkeys);
+				//_int(rdispls, recv_msgstart);
+				rdispls[0];
+				for (int i = 1; i <= rc; ++i)
+					rdispls[i] = rdispls[i - 1] + recv_msglen[i - 1];
+
+//				KEY_T * dst = recvkeys;
+
+//				if (!dst)
+//					dst = malloc(sizeof(KEY_T) * rdispls[rc]);
+
+					enum { CHUNK = 2 };
+
+
+					
+					const ptrdiff_t msgmaxlen = _max(send_msglen);
+					if (!r)
+						printf("max msglen: %zd\n", msgmaxlen);
+					
+					const ptrdiff_t pc = (msgmaxlen + CHUNK - 1) / CHUNK;
+					void * sendbuf = malloc(CHUNK * sizeof(KEY_T) * rc);
+					memset(sendbuf, rc, sizeof(KEY_T) * CHUNK * rc);
+					
+					void * recvbuf = malloc(CHUNK * sizeof(KEY_T) * rc);
+
+
+					
+					const double t0 = MPI_Wtime();
+					for (ptrdiff_t p = 0; p < pc; ++p)
+					{
+						if (!r && p % 10 == 0)
+							printf("p %zd in %g s, %g MB/s\n", p, MPI_Wtime() - t0,
+								   p * CHUNK * rc * sizeof(KEY_T) / (MPI_Wtime() - t0) * 1e-6);
+						MPI_CHECK( MPI_Alltoall(sendbuf, CHUNK, MPI_KEY_T,
+											recvbuf, CHUNK, MPI_KEY_T, comm));
+					}
+					const double t1 = MPI_Wtime();
+/*											const void *sendbuf, int sendcount, MPI_Datatype sendtype,
+       void *recvbuf, int recvcount, MPI_Datatype recvtype, MPI_Comm comm)
+*/				
+/*				MPI_CHECK(MPI_Alltoallv(sortedkeys, sendcounts, sdispls, MPI_KEY_T,
+										dst, recvcounts, rdispls, MPI_KEY_T, comm));
+
+				if (dst != recvkeys)
+					free(dst);
+*/				
+				MPI_Barrier(comm);
+				if (!r)
+					printf("all to all v done in %g s\n", t1 - t0);
+				MPI_Barrier(comm);
+				exit(0);
+				for (int c = 0; c < 2; ++c)
+				{
+					
+				}
+
+				/* int MPI_Alltoallv(const void *sendbuf, const int *sendcounts,
+       const int *sdispls, MPI_Datatype sendtype, void *recvbuf,
+       const int *recvcounts, const int *rdispls, MPI_Datatype recvtype, MPI_Comm comm) */
+			}
+#else /* P2P-based attempt*/
+			{
+				MPI_Barrier(comm);
+				if (!r)
+					printf("alternate\n");
+				MPI_Barrier(comm);
+				
+				MPI_Request sendreqs[3 * rc];
+				for (int d = 0; d < rc; ++d)
+					sendreqs[d] = MPI_REQUEST_NULL;
+
+				
+				for(int d = 0; d < rc; ++d)
+					post_and_send(d, sendreqs + 3 * d);
+
+				MPI_Barrier(comm);
+				if (!r)
+					printf("post and send done\n");
+				MPI_Barrier(comm);
+				MPI_CHECK(MPI_Waitall(3 * rc, sendreqs, MPI_STATUSES_IGNORE));
+
+				for (int d = 0; d < rc; ++d)
+					wait_and_update(d);
+			}
+#endif
 			else
 			{
 				/* communication-computation overlap */
@@ -571,7 +856,7 @@ int NAME(KEY_T) (
 
 				for (int d = 0; d < rc; ++d)
 				{
-					post_and_send(d);
+					post_and_send(d, NULL);
 
 					if (MPI_SORT_CCO - 1 < d)
 						wait_and_update(d - MPI_SORT_CCO);
@@ -697,3 +982,4 @@ int NAME(KEY_T) (
 
 	return MPI_SUCCESS;
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         

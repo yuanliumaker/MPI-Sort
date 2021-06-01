@@ -16,7 +16,8 @@ OBJS = \
 	xtract.o \
 	dsort-uint8.o \
 	dsort-uint16.o \
-	dsort-uint32.o
+	dsort-uint32.o \
+	a2av.o
 
 GOALS = libmpi-sort.a libmpi-sort.so
 
