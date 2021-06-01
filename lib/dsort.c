@@ -9,6 +9,7 @@
 
 #include <mpi.h>
 
+#include "a2av.h"
 #include "macros.h"
 #include "common.h"
 #include "static.h"
@@ -19,8 +20,8 @@
 int NAME(KEY_T) (
 	const int stable,
 	const KEY_T * sendkeys,
-	const void * sendvals0,
-	const void * sendvals1,
+	void * sendvals0,
+	void * sendvals1,
 	const int sendcount,
 	MPI_Datatype valtype0,
 	MPI_Datatype valtype1,
@@ -30,7 +31,7 @@ int NAME(KEY_T) (
 	const int recvcount,
 	MPI_Comm comm)
 {
-	
+
 	const double t0 = MPI_Wtime();
 
 	DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
@@ -38,13 +39,6 @@ int NAME(KEY_T) (
 	int r, rc;
 	MPI_CHECK(MPI_Comm_rank(comm, &r));
 	MPI_CHECK(MPI_Comm_size(comm, &rc));
-	MPI_CHECK(MPI_Barrier(comm));
-	if (!r)
-	{
-		printf("hello dsort\n");
-		fflush(stdout);
-	}
-	MPI_CHECK(MPI_Barrier(comm));
 
 	range_t keyrange;
 
@@ -257,7 +251,7 @@ int NAME(KEY_T) (
 			printf("sending message around now... have passed %g s\n",
 				   t4 - t0);
 
-		
+
 		/* send/recv messages around */
 		{
 			int esz0 = 0, esz1 = 0;
@@ -333,7 +327,7 @@ int NAME(KEY_T) (
 
 						KEY_T * keys = malloc(sizeof(*keys) * hlen);
 						ptrdiff_t * lengths = malloc(sizeof(*lengths) * hlen);
-			
+
 						/* we RLE-compress the message */
 						const ptrdiff_t runcount = rle(sortedkeys + mstart, mlen, keys, lengths);
 #ifndef NDEBUG
@@ -393,7 +387,7 @@ int NAME(KEY_T) (
 							MPI_CHECK(MPI_Isend(values, mlen, VALUE01, rdst, 2, comm, reqs + 2));
 						else
 							MPI_CHECK(MPI_Send(values, mlen, VALUE01, rdst, 2, comm));
-						
+
 						free(lengths);
 						free(keys);
 						free(values);
@@ -447,7 +441,7 @@ int NAME(KEY_T) (
 				free(m->keys);
 
 				memset(m, 0, sizeof(*m));
-			}		
+			}
 
 			if (stable)
 #if 0
@@ -463,19 +457,19 @@ int NAME(KEY_T) (
 
 					const double t0 = MPI_Wtime();
 					MPI_CHECK(MPI_Barrier(comm));
-											
+
 					/* we do not compress any message here, just call scatterv */
 					int sendcounts[rc], displs[rc];
-					
+
 					if (d == r)
 					{
 						for (int i = 0; i < rc; ++i)
 							sendcounts[i] = send_msglen[i];
-					
+
 						for (int i = 0; i < rc; ++i)
 							displs[i] = send_msgstart[i];
 					}
-					
+
 					const ptrdiff_t msglen = recv_msglen[d];
 
 					KEY_T * rkeys = malloc(sizeof(*rkeys) * msglen);
@@ -511,7 +505,7 @@ int NAME(KEY_T) (
 						fflush(stdout);
 					}
 					MPI_CHECK(MPI_Barrier(comm));
-					
+
 					/* gather and send values */
 					for (int c = 0; c < 2; ++c)
 					{
@@ -552,9 +546,9 @@ int NAME(KEY_T) (
 							memcpy(esz[c] * positions[i] + (int8_t *)dst,
 								   esz[c] * i + (int8_t *)recvbuf,
 								   esz[c]);
-					
+
 						free(recvbuf);
-					
+
 						if (sendbuf)
 							free(sendbuf);
 					MPI_CHECK(MPI_Barrier(comm));
@@ -573,15 +567,110 @@ int NAME(KEY_T) (
 
 					free(positions);
 				}
-#elif 1 /* Allgather + large messages attempt */
+#elif 1 /* Allgather attempt */
+			{
+				MPI_CHECK(MPI_Barrier(comm));
+				const double t0 = MPI_Wtime();
+
+				if (!r)
+					printf("starting now...\n");
+
+				MPI_CHECK(MPI_Barrier(comm));
+
+				ptrdiff_t rdispls[rc];
+
+				rdispls[0] = 0;
+				for (int rr = 1; rr < rc; ++rr)
+					rdispls[rr] = rdispls[rr - 1] + recv_msglen[rr - 1];
+
+				KEY_T * dstkeys = recvkeys;
+
+				if (!dstkeys)
+					dstkeys = malloc(sizeof(*dstkeys) * recvcount);
+
+				__extension__ void reorder (
+					void * const inout,
+					const ptrdiff_t size )
+				{
+					if (!inout)
+						return;
+
+					void * tmp = malloc(size * sendcount);
+
+					memcpy(tmp, inout, size * sendcount);
+					gather(size, sendcount, tmp, order, inout);
+
+					free(tmp);
+				}
+
+				reorder(sendvals0, esz0);
+				reorder(sendvals1, esz1);
+
+				/* send keys around */
+				a2av(sortedkeys, send_msglen, send_msgstart, MPI_KEY_T,
+					 dstkeys, recv_msglen, rdispls, comm);
+
+				DIE_UNLESS(order = realloc(order, recvcount * sizeof(*order)));
+
+				/* sort again */
+				memset(histo, 0, sizeof(*histo) * keyrange_count);
+				const ptrdiff_t local_count =
+					counting_sort(keyrange.begin, keyrange.end, recvcount, dstkeys, histo, start, order);
+
+				assert(local_count == recvcount);
+
+#ifndef NDEBUG
+				MPI_CHECK(MPI_Barrier(comm));
+				for (ptrdiff_t k = 0; k < keyrange_count; ++k)
+					assert(0 == (recv_histo[k] -= histo[k]));
+				MPI_CHECK(MPI_Barrier(comm));
+#endif
+
+				/* send values around */
+				__extension__ void xchg_val (
+					const void * const in,
+					const ptrdiff_t size,
+					MPI_Datatype type,
+					void * const out)
+				{
+					if (!in || !out)
+						return;
+
+					void * const recvbuf = malloc(size * recvcount);
+
+					a2av(in, send_msglen, send_msgstart, type,
+						 recvbuf, recv_msglen, rdispls, comm);
+
+					gather(size, recvcount, recvbuf, order, out);
+
+					free(recvbuf);
+				}
+
+				xchg_val(sendvals0, esz0, valtype0, recvvals0);
+				xchg_val(sendvals1, esz1, valtype1, recvvals1);
+
+				if (recvkeys != dstkeys)
+					free(dstkeys);
+
+				MPI_CHECK(MPI_Barrier(comm));
+				const double t1 = MPI_Wtime();
+				MPI_CHECK(MPI_Barrier(comm));
+
+				if (!r)
+					printf("a2av done in %g s...\n", t1 - t0);
+
+				MPI_CHECK(MPI_Barrier(comm));
+			}
+
+#elif 0 /* Allgather + large messages attempt */
 			{
 				int MPI_SORT_VERBOSE = 0;
 				READENV(MPI_SORT_VERBOSE, atoi);
 
 				MPI_SORT_VERBOSE &= !r;
-				
+
 				ptrdiff_t msglen_homo;
-				
+
 				/* compute average 95-percentiles of the message sizes first */
 				{
 					ptrdiff_t sizes[rc];
@@ -594,7 +683,7 @@ int NAME(KEY_T) (
 
 					MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_SUM, comm));
 					msglen_homo /= rc;
-					
+
 					if (MPI_SORT_VERBOSE)
 						printf("msglen_homo = %zd\n", msglen_homo);
 				}
@@ -605,26 +694,26 @@ int NAME(KEY_T) (
 					dst = malloc(sizeof(*dst) * recvcount);
 
 				KEY_T * pdst = dst;
-					
+
 				/* send around keys via A2A */
 				{
 					const double t0 = MPI_Wtime();
 
 					if (!r)
 						printf("all to all begins...\n");
-					
+
 					enum { SENDCOUNT = 128 / sizeof(KEY_T) };
 
 					KEY_T * sendbuf = malloc(sizeof(KEY_T) * SENDCOUNT * rc);
 					KEY_T * recvbuf = malloc(sizeof(KEY_T) * SENDCOUNT * rc);
-					
+
 					for (ptrdiff_t base = 0; base < msglen_homo; base += SENDCOUNT)
 					{
 						if (base / SENDCOUNT % 10 == 0)
 							if (!r)
 								printf("exchanging data... base %zd of msglen_homo %zd (t %g s)\n",
 									   base, msglen_homo, MPI_Wtime() - t0);
-						
+
 						/* real send count, at last can be less than SENDCOUNT */
 						const ptrdiff_t n = MIN(SENDCOUNT, msglen_homo - base);
 
@@ -634,7 +723,7 @@ int NAME(KEY_T) (
 								memcpy(sendbuf + n * rr,
 									   sortedkeys + send_msgstart[rr] + base,
 									   sizeof(KEY_T) * MIN(n, send_msglen[rr] - base));
-						
+
 						MPI_CHECK(MPI_Alltoall(sendbuf, n, MPI_KEY_T, recvbuf, n, MPI_KEY_T, comm));
 
 						/* unpack recv buffer -- it may contain unused/invalid entries */
@@ -646,7 +735,7 @@ int NAME(KEY_T) (
 								pdst += c;
 								}
 					}
-										
+
 					free(recvbuf);
 					free(sendbuf);
 
@@ -664,12 +753,12 @@ int NAME(KEY_T) (
 					if (!r)
 						printf("sending now remaining messages...\n");
 					MPI_CHECK(MPI_Barrier(comm));
-					const double t0 = MPI_Wtime();					
+					const double t0 = MPI_Wtime();
 					int rrc = 0, src = 0;
 					MPI_Request recvreq[rc],sendreq[rc];
 
 					/* receive request count and send request count */
-					
+
 					/* recv first */
 					for (int rr = 0; rr < rc; ++rr)
 					{
@@ -695,9 +784,9 @@ int NAME(KEY_T) (
 					/* wait now for receiving all messages */
 					MPI_CHECK(MPI_Waitall(rrc, recvreq, MPI_STATUSES_IGNORE));
 
-					
+
 										MPI_CHECK(MPI_Barrier(comm));
-										const double t1 = MPI_Wtime();`
+										const double t1 = MPI_Wtime();
 					if (!r)
 						printf("all to all done in %g s\n", t1 - t0);
 
@@ -705,19 +794,19 @@ int NAME(KEY_T) (
 					MPI_CHECK(MPI_Barrier(comm));
 
 				}
-				
+
 				if (dst != recvkeys)
 				{
 					free(dst);
 					dst = NULL;
 				}
-				
+
 				MPI_CHECK(MPI_Barrier(comm));
 				fflush(stdout);
 				MPI_CHECK(MPI_Barrier(comm));
 				exit(0);
 			}
-			
+
 #elif 0 /* Allgatherv attempt */
 			{
 				int sendcounts[rc], sdispls[rc], recvcounts[rc], rdispls[rc + 1];
@@ -739,10 +828,10 @@ int NAME(KEY_T) (
 						retval = MAX(retval, in[i]);
 
 					MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &retval, 1, MPI_INT64_T, MPI_MAX, comm));
-					
+
 					return retval;
 				}
-				
+
 				_int(sendcounts, send_msglen);
 				_int(sdispls, send_msgstart);
 				_int(recvcounts, recv_msglen);
@@ -773,19 +862,19 @@ int NAME(KEY_T) (
 					enum { CHUNK = 2 };
 
 
-					
+
 					const ptrdiff_t msgmaxlen = _max(send_msglen);
 					if (!r)
 						printf("max msglen: %zd\n", msgmaxlen);
-					
+
 					const ptrdiff_t pc = (msgmaxlen + CHUNK - 1) / CHUNK;
 					void * sendbuf = malloc(CHUNK * sizeof(KEY_T) * rc);
 					memset(sendbuf, rc, sizeof(KEY_T) * CHUNK * rc);
-					
+
 					void * recvbuf = malloc(CHUNK * sizeof(KEY_T) * rc);
 
 
-					
+
 					const double t0 = MPI_Wtime();
 					for (ptrdiff_t p = 0; p < pc; ++p)
 					{
@@ -798,13 +887,13 @@ int NAME(KEY_T) (
 					const double t1 = MPI_Wtime();
 /*											const void *sendbuf, int sendcount, MPI_Datatype sendtype,
        void *recvbuf, int recvcount, MPI_Datatype recvtype, MPI_Comm comm)
-*/				
+*/
 /*				MPI_CHECK(MPI_Alltoallv(sortedkeys, sendcounts, sdispls, MPI_KEY_T,
 										dst, recvcounts, rdispls, MPI_KEY_T, comm));
 
 				if (dst != recvkeys)
 					free(dst);
-*/				
+*/
 				MPI_Barrier(comm);
 				if (!r)
 					printf("all to all v done in %g s\n", t1 - t0);
@@ -812,7 +901,7 @@ int NAME(KEY_T) (
 				exit(0);
 				for (int c = 0; c < 2; ++c)
 				{
-					
+
 				}
 
 				/* int MPI_Alltoallv(const void *sendbuf, const int *sendcounts,
@@ -825,12 +914,12 @@ int NAME(KEY_T) (
 				if (!r)
 					printf("alternate\n");
 				MPI_Barrier(comm);
-				
+
 				MPI_Request sendreqs[3 * rc];
 				for (int d = 0; d < rc; ++d)
 					sendreqs[d] = MPI_REQUEST_NULL;
 
-				
+
 				for(int d = 0; d < rc; ++d)
 					post_and_send(d, sendreqs + 3 * d);
 
@@ -864,7 +953,7 @@ int NAME(KEY_T) (
 					if (rc - 1 == d)
 						for (int i = MPI_SORT_CCO - 1; i >= 0; --i)
 							wait_and_update(d - i);
-				}	
+				}
 			}
 
 			MPI_CHECK(MPI_Type_free(&MPI_KEY_T));
@@ -873,7 +962,7 @@ int NAME(KEY_T) (
 #ifndef NDEBUG
 			for (ptrdiff_t i = 0; i < keyrange_count; ++i)
 				assert(!recv_histo[i]);
-				
+
 			free(recv_histo);
 #endif
 		}
@@ -937,7 +1026,7 @@ int NAME(KEY_T) (
 	free(order);
 	free(start);
 	free(histo);
-		
+
 	const double t6 = MPI_Wtime();
 
 	{
@@ -982,4 +1071,3 @@ int NAME(KEY_T) (
 
 	return MPI_SUCCESS;
 }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         

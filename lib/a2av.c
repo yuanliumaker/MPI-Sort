@@ -42,7 +42,7 @@ void a2av (
 
 	/* element size */
 	ptrdiff_t esz;
-	
+
 	{
 		int t;
 		MPI_CHECK(MPI_Type_size(type, &t));
@@ -50,9 +50,9 @@ void a2av (
 	}
 
 	/* send around keys via A2A */
-	{		
+	{
 		const ptrdiff_t sendcount = MAX(1, 128 / esz);
-		
+
 		void * sendbuf = malloc(esz * sendcount * rc);
 		void * recvbuf = malloc(esz * sendcount * rc);
 
