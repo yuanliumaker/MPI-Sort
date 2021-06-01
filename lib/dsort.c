@@ -586,7 +586,7 @@ int NAME(KEY_T) (
 				KEY_T * dstkeys = recvkeys;
 
 				if (!dstkeys)
-					dstkeys = malloc(sizeof(*dstkeys) * recvcount);
+					DIE_UNLESS(dstkeys = malloc(sizeof(*dstkeys) * recvcount));
 
 				__extension__ void reorder (
 					void * const inout,
@@ -595,7 +595,8 @@ int NAME(KEY_T) (
 					if (!inout)
 						return;
 
-					void * tmp = malloc(size * sendcount);
+					void * tmp;
+					DIE_UNLESS(tmp = malloc(size * sendcount));
 
 					memcpy(tmp, inout, size * sendcount);
 					gather(size, sendcount, tmp, order, inout);
@@ -610,6 +611,12 @@ int NAME(KEY_T) (
 				a2av(sortedkeys, send_msglen, send_msgstart, MPI_KEY_T,
 					 dstkeys, recv_msglen, rdispls, comm);
 
+#ifndef NDEBUG
+				ASSERT_SUM(recvcount, keyrange_count, recv_histo);
+
+				for (ptrdiff_t i = 0; i < recvcount; ++i)
+					assert(dstkeys[i] >= keyrange.begin && dstkeys[i] < keyrange.end);
+#endif
 				DIE_UNLESS(order = realloc(order, recvcount * sizeof(*order)));
 
 				/* sort again */
@@ -636,7 +643,8 @@ int NAME(KEY_T) (
 					if (!in || !out)
 						return;
 
-					void * const recvbuf = malloc(size * recvcount);
+					void * recvbuf;
+					DIE_UNLESS(recvbuf = malloc(size * recvcount));
 
 					a2av(in, send_msglen, send_msgstart, type,
 						 recvbuf, recv_msglen, rdispls, comm);

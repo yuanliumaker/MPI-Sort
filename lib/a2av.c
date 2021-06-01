@@ -7,6 +7,7 @@
 #include <common-util.h>
 #include <mpi-util.h>
 
+#include "macros.h"
 #include "a2av.h"
 
 void a2av (
@@ -19,6 +20,8 @@ void a2av (
 	const ptrdiff_t * rdispls,
 	MPI_Comm comm )
 {
+	int retval = 0;
+
 	int r, rc;
 	MPI_CHECK(MPI_Comm_rank(comm, &r));
 	MPI_CHECK(MPI_Comm_size(comm, &rc));
@@ -51,14 +54,18 @@ void a2av (
 
 	/* send around keys via A2A */
 	{
-		const ptrdiff_t sendcount = MAX(1, 128 / esz);
+		const ptrdiff_t maxcount = MAX(1, 128 / esz);
 
-		void * sendbuf = malloc(esz * sendcount * rc);
-		void * recvbuf = malloc(esz * sendcount * rc);
+		void *sendbuf, *recvbuf;
+		DIE_UNLESS(sendbuf = malloc(esz * maxcount * rc));
+		DIE_UNLESS(recvbuf = malloc(esz * maxcount * rc));
 
-		for (ptrdiff_t base = 0; base < msglen_homo; base += sendcount)
+		for (ptrdiff_t base = 0; base < msglen_homo; base += maxcount)
 		{
-			const ptrdiff_t n = MIN(sendcount, msglen_homo - base);
+			memset(sendbuf, -1, esz * maxcount * rc);
+			memset(recvbuf, -1, esz * maxcount * rc);
+
+			const ptrdiff_t n = MIN(maxcount, msglen_homo - base);
 
 			/* pack sendbuf */
 			for (int rr = 0; rr < rc; ++rr)
@@ -84,7 +91,7 @@ void a2av (
 
 	/* recv/send the remaining keys via P2P */
 	{
-		int rc = 0;
+		int reqc = 0;
 		MPI_Request reqs[rc];
 
 		for (int rr = 0; rr < rc; ++rr)
@@ -93,7 +100,7 @@ void a2av (
 
 			if (rem > 0)
 				MPI_CHECK(MPI_Irecv(esz * (rdispls[rr] + msglen_homo) + (int8_t *)out,
-									rem, type, rr, rr + rc * r, comm, reqs + rc++));
+									rem, type, rr, rr + rc * r, comm, reqs + reqc++));
 		}
 
 		for (int rr = 0; rr < rc; ++rr)
@@ -106,6 +113,6 @@ void a2av (
 		}
 
 		/* wait now for receiving all messages */
-		MPI_CHECK(MPI_Waitall(rc, reqs, MPI_STATUSES_IGNORE));
+		MPI_CHECK(MPI_Waitall(reqc, reqs, MPI_STATUSES_IGNORE));
 	}
 }
