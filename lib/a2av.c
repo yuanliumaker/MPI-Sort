@@ -20,8 +20,6 @@ void a2av (
 	const ptrdiff_t * rdispls,
 	MPI_Comm comm )
 {
-	int retval = 0;
-
 	int r, rc;
 	MPI_CHECK(MPI_Comm_rank(comm, &r));
 	MPI_CHECK(MPI_Comm_size(comm, &rc));
@@ -37,7 +35,7 @@ void a2av (
 		__extension__ int compar(const void * a, const void * b) { return *(ptrdiff_t *)a - *(ptrdiff_t *)b; }
 		qsort(s, rc, sizeof(ptrdiff_t), compar);
 
-		msglen_homo = s[MAX(0, MIN(rc - 1, (int)round(0.95 * rc)))];
+		msglen_homo = s[MAX(0, MIN(rc - 1, (int)round(0.99 * rc)))];
 
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_SUM, comm));
 		msglen_homo /= rc;
@@ -61,12 +59,9 @@ void a2av (
 		DIE_UNLESS(recvbuf = malloc(esz * maxcount * rc));
 
 		for (ptrdiff_t base = 0; base < msglen_homo; base += maxcount)
-		{
-			memset(sendbuf, -1, esz * maxcount * rc);
-			memset(recvbuf, -1, esz * maxcount * rc);
-
+		{			
 			const ptrdiff_t n = MIN(maxcount, msglen_homo - base);
-
+			
 			/* pack sendbuf */
 			for (int rr = 0; rr < rc; ++rr)
 				if (base < sendcounts[rr])
@@ -92,7 +87,7 @@ void a2av (
 	/* recv/send the remaining keys via P2P */
 	{
 		int reqc = 0;
-		MPI_Request reqs[rc];
+		MPI_Request reqs[2 * rc];
 
 		for (int rr = 0; rr < rc; ++rr)
 		{
@@ -108,8 +103,10 @@ void a2av (
 			const ptrdiff_t rem = sendcounts[rr] - msglen_homo;
 
 			if (rem > 0)
-				MPI_CHECK(MPI_Send(esz * (sdispls[rr] + msglen_homo) + (int8_t *)in,
-								   rem, type, rr, r + rc * rr, comm));
+				/* yes, we opt for Isend vs Send because the P2P messages could be many,
+				   and we are not sure about the MPI buffer capacity */
+				MPI_CHECK(MPI_Isend(esz * (sdispls[rr] + msglen_homo) + (int8_t *)in,
+									rem, type, rr, r + rc * rr, comm, reqs + reqc++));
 		}
 
 		/* wait now for receiving all messages */
