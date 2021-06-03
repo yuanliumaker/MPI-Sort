@@ -59,9 +59,9 @@ void a2av (
 		DIE_UNLESS(recvbuf = malloc(esz * maxcount * rc));
 
 		for (ptrdiff_t base = 0; base < msglen_homo; base += maxcount)
-		{			
+		{
 			const ptrdiff_t n = MIN(maxcount, msglen_homo - base);
-			
+
 			/* pack sendbuf */
 			for (int rr = 0; rr < rc; ++rr)
 				if (base < sendcounts[rr])
