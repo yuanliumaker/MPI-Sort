@@ -3,7 +3,7 @@ CFLAGS += -I../include
 CXXFLAGS += -std=c++11
 
 LDFLAGS += -L../lib
-LDFLAGS := -lmpi-sort $(LDFLAGS)
+LDFLAGS := -l:libmpi-sort.a $(LDFLAGS)
 
 GOALS = mpi-sort vanilla-sort
 

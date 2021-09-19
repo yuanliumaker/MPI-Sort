@@ -56,6 +56,15 @@ int main (
 	MPI_CHECK(MPI_Comm_rank(comm, &r));
 	MPI_CHECK(MPI_Comm_size(comm, &rc));
 
+	/* print MPI_TAG_UB */
+	{
+		int * v = NULL, flag = 0;
+		MPI_CHECK(MPI_Comm_get_attr(comm, MPI_TAG_UB, (void **)&v, &flag));
+
+		if (!r)
+			printf("MPI_TAG_UB: %d (flag: %d)\n", *v, flag);
+	}
+
 	if (argc != 4)
 	{
 		if (!r)
