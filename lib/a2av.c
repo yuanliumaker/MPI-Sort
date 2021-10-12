@@ -11,6 +11,16 @@
 #include "macros.h"
 #include "a2av.h"
 
+static uint16_t hash16 (const uint64_t data)
+{
+	const uint16_t t0 = (data >>  0) & 0xffff;
+	const uint16_t t1 = (data >>  8) & 0xffff;
+	const uint16_t t2 = (data >> 16) & 0xffff;
+	const uint16_t t3 = (data >> 24) & 0xffff;
+
+	return t0 ^ t1 ^ t2 ^ t3;
+}
+
 void a2av (
 	const void * in,
 	const ptrdiff_t * sendcounts,
@@ -96,7 +106,7 @@ void a2av (
 
 			if (rem > 0)
 				MPI_CHECK(MPI_Irecv(esz * (rdispls[rr] + msglen_homo) + (int8_t *)out,
-									rem, type, rr, rr + rc * r, comm, reqs + reqc++));
+									rem, type, rr, hash16(rr + (ptrdiff_t)rc * r), comm, reqs + reqc++));
 		}
 
 		for (int rr = 0; rr < rc; ++rr)
@@ -105,7 +115,7 @@ void a2av (
 
 			if (rem > 0)
 				MPI_CHECK(MPI_Send(esz * (sdispls[rr] + msglen_homo) + (int8_t *)in,
-								   rem, type, rr, r + rc * rr, comm));
+								   rem, type, rr, hash16(r + (ptrdiff_t)rc * rr), comm));
 		}
 
 		/* wait now for receiving all messages */
