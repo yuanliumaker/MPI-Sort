@@ -1,5 +1,6 @@
 CFLAGS += -I../include
 
+CFLAGS += -std=c99
 CXXFLAGS += -std=c++11
 
 LDFLAGS += -L../lib

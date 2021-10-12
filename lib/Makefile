@@ -1,6 +1,5 @@
-
 CFLAGS += -std=c99
-CFLAGS += -I../include
+CFLAGS += -I../include -I../util
 CFLAGS += -fvisibility=hidden -fPIC
 
 tuned ?= 1
