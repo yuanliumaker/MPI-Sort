@@ -6,8 +6,6 @@
 #include <math.h>
 #include <string.h>
 
-#include <mpi-util.h>
-
 #include "macros.h"
 #include "a2av.h"
 
