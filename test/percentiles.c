@@ -6,8 +6,6 @@
 #include <string.h>
 #include <math.h>
 
-#include <posix-util.h>
-
 #include <mpi.h>
 #include <mpi-sort.h>
 
