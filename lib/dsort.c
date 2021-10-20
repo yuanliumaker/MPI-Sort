@@ -68,7 +68,9 @@ int NAME(KEY_T) (
 	const double t2 = MPI_Wtime();
 
 	/* exclusive scan of global histogram */
-	ptrdiff_t * global_start = malloc(keyrange_count * sizeof(*global_start));
+	ptrdiff_t * global_start = NULL;
+	DIE_UNLESS(global_start = malloc(keyrange_count * sizeof(*global_start)));
+
 	MPI_CHECK(MPI_Allreduce(start, global_start, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
 
 	ptrdiff_t recvstart_rank[rc + 1];
@@ -88,13 +90,17 @@ int NAME(KEY_T) (
 
 	if (recvvals0 || recvvals1)
 	{
-		KEY_T * sortedkeys = malloc(sizeof(*sortedkeys) * sendcount);
+		KEY_T * sortedkeys = NULL;
+		DIE_UNLESS(sortedkeys = malloc(sizeof(*sortedkeys) * sendcount));
+
 		gather(sizeof(KEY_T), sendcount, sendkeys, order, sortedkeys);
 
-		ptrdiff_t * recv_start = calloc(sizeof(*recv_start), keyrange_count);
+		ptrdiff_t * recv_start = NULL;
+		DIE_UNLESS(recv_start = calloc(sizeof(*recv_start), keyrange_count));
 
 #ifndef NDEBUG
-		ptrdiff_t * recv_histo = calloc(sizeof(*recv_histo), keyrange_count);
+		ptrdiff_t * recv_histo = NULL;
+		DIE_UNLESS(recv_histo = calloc(sizeof(*recv_histo), keyrange_count));
 #endif
 
 		/* compute recv_start */
@@ -140,7 +146,8 @@ int NAME(KEY_T) (
 			{
 				MPI_CHECK(MPI_Exscan(histo, global_bas, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
 
-				ptrdiff_t * tmp = malloc(keyrange_count * sizeof(*tmp));
+				ptrdiff_t * tmp = NULL;
+				DIE_UNLESS(tmp = malloc(keyrange_count * sizeof(*tmp)));
 
 				/* TODO: optimize as bcast global_bas + histo from rank rc - 1 */
 				MPI_CHECK(MPI_Allreduce(histo, tmp, keyrange_count, MPI_INT64_T, MPI_SUM, comm));
@@ -283,14 +290,14 @@ int NAME(KEY_T) (
 						message_t * m = recv_msg + d;
 
 						const ptrdiff_t hlen = recv_headlen[rsrc];
-						m->keys = malloc(sizeof(KEY_T) * hlen);
+						DIE_UNLESS(m->keys = malloc(sizeof(KEY_T) * hlen));
 						MPI_CHECK(MPI_Irecv(m->keys, hlen, MPI_KEY_T, rsrc, 0, comm, m->requests + 0));
 
-						m->lengths = malloc(sizeof(ptrdiff_t) * hlen);
+						DIE_UNLESS(m->lengths = malloc(sizeof(ptrdiff_t) * hlen));
 						MPI_CHECK(MPI_Irecv(m->lengths, hlen, MPI_INT64_T, rsrc, 1, comm, m->requests + 1));
 
 						const ptrdiff_t mlen = recv_msglen[rsrc];
-						m->values = malloc(esz01 * mlen);
+						DIE_UNLESS(m->values = malloc(esz01 * mlen));
 						MPI_CHECK(MPI_Irecv(m->values, mlen, VALUE01, rsrc, 2, comm, m->requests + 2));
 					}
 				}
@@ -309,8 +316,11 @@ int NAME(KEY_T) (
 						assert(hlen >= 0 && hlen <= keyrange_count);
 						assert(mstart >= 0 && mstart < sendcount);
 
-						KEY_T * keys = malloc(sizeof(*keys) * hlen);
-						ptrdiff_t * lengths = malloc(sizeof(*lengths) * hlen);
+						KEY_T * keys = NULL;
+						DIE_UNLESS(keys = malloc(sizeof(*keys) * hlen));
+
+						ptrdiff_t * lengths = NULL;
+						DIE_UNLESS(lengths = malloc(sizeof(*lengths) * hlen));
 
 						/* we RLE-compress the message */
 						const ptrdiff_t runcount = rle(sortedkeys + mstart, mlen, keys, lengths);
@@ -335,7 +345,8 @@ int NAME(KEY_T) (
 						MPI_CHECK(MPI_Send(keys, hlen, MPI_KEY_T, rdst, 0, comm));
 						MPI_CHECK(MPI_Send(lengths, hlen, MPI_INT64_T, rdst, 1, comm));
 
-						void * values = malloc(esz01 * mlen);
+						void * values = NULL;
+						DIE_UNLESS(values = malloc(esz01 * mlen));
 
 						if (recvvals0)
 							gather(esz0, mlen, sendvals0, order + mstart, values);
