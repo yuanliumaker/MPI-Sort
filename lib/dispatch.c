@@ -84,7 +84,7 @@ static int dispatch_unsigned (
 	MPI_SORT_RADIX = MPI_SORT_RADIX * (MPI_UINT8_T != keytype);
 
 	/* we discourage radix sort for 16 bits integers */
-	MPI_SORT_RADIX -= (MPI_UINT16_T == keytype);
+	MPI_SORT_RADIX = MAX(0, MPI_SORT_RADIX - (MPI_UINT16_T == keytype));
 
 	/* we enforce radix sort for 64 bits integers */
 	MPI_SORT_RADIX |= (MPI_UINT64_T == keytype);
