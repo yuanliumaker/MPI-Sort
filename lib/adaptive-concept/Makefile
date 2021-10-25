@@ -6,7 +6,7 @@ LDFLAGS += -L../lib
 LDFLAGS := -l:libmpi-sort.a -lm $(LDFLAGS)
 
 test : main.o ../xtract.o
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c $<
