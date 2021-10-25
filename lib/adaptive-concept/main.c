@@ -173,8 +173,8 @@ void dsort_uint32 (
 					printf(" %u", keys[i]);
 				printf("\n");
 
-				fflush(stdout);
 			}
+				fflush(stdout);
 			MPI_CHECK(MPI_Barrier(comm));
 		}
 
@@ -189,43 +189,88 @@ void dsort_uint32 (
 		MPI_CHECK(MPI_Allgather(&myend, 1, MPI_INT64_T, recvstart_rank + 1, 1, MPI_INT64_T, comm));
 	}
 
-	ptrdiff_t local_histo[rankcountp1], local_start[rankcountp1], global_startkey[rankcountp1];
+	ptrdiff_t local_histo[rankcountp1], local_start[rankcountp1];
+	ptrdiff_t global_startkey_hi[rankcountp1], global_startkey_lo[rankcountp1];
+	ptrdiff_t global_count_hi[rankcountp1], global_count_lo[rankcountp1];
 
 	/* find an adaptive histogram with rankcount bins */
 	{
-		ptrdiff_t curkey = keyrange.end, qcount = 0;
-
-		for (ptrdiff_t b = 31; b >= 0; --b)
 		{
-			const ptrdiff_t delta = 1ll << b;
+			ptrdiff_t curkey = keyrange.end, qcount = 0;
 
-			if (keyrange.end - keyrange.begin < delta)
-				continue;
-
-			const ptrdiff_t newkey = MAX(0, curkey - delta);
-
-			ptrdiff_t query[rankcount];
-			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
-
-			ptrdiff_t counts[rankcount];
-
-			for (int rr = 0; rr < rankcount; ++rr)
-				/* we count all keys SMALLER THAN query */
-				counts[rr] = lb_u32(keys, sendcount, query[rr]);
-
-			ptrdiff_t newcount = 0;
-			MPI_CHECK(MPI_Reduce_scatter_block
-					  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
-
-			if (newcount >= recvstart_rank[rank])
+			for (ptrdiff_t b = 31; b >= 0; --b)
 			{
-				curkey = newkey;
-				qcount = newcount;
+				const ptrdiff_t delta = 1ll << b;
+
+				if (keyrange.end - keyrange.begin < delta)
+					continue;
+
+				const ptrdiff_t newkey = MAX(0, curkey - delta);
+
+				ptrdiff_t query[rankcount];
+				MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
+
+				ptrdiff_t counts[rankcount];
+				for (int rr = 0; rr < rankcount; ++rr)
+					/* we count all keys SMALLER THAN query */
+					counts[rr] = lb_u32(keys, sendcount, query[rr]);
+
+				ptrdiff_t newcount = 0;
+				MPI_CHECK(MPI_Reduce_scatter_block
+						  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
+
+				if (newcount >= recvstart_rank[rank])
+				{
+					curkey = newkey;
+					qcount = newcount;
+				}
 			}
+
+			MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey_hi, 1, MPI_INT64_T, comm));
+			global_startkey_hi[rankcount] = keyrange.end;
+
+			MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count_hi, 1, MPI_INT64_T, comm));
+			global_count_hi[rankcount] = sendcount;
 		}
 
-		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey, 1, MPI_INT64_T, comm));
-		global_startkey[rankcount] = keyrange.end;
+		{
+			ptrdiff_t curkey = keyrange.begin, qcount = 0;
+
+			for (ptrdiff_t b = 31; b >= 0; --b)
+			{
+				const ptrdiff_t delta = 1ll << b;
+
+				if (keyrange.end - keyrange.begin < delta)
+					continue;
+
+				const ptrdiff_t newkey = MIN(keyrange.end, curkey + delta);
+
+				ptrdiff_t query[rankcount];
+				MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
+
+				ptrdiff_t counts[rankcount];
+				for (int rr = 0; rr < rankcount; ++rr)
+					/* we count all keys SMALLER THAN query */
+					counts[rr] = lb_u32(keys, sendcount, query[rr]);
+
+				ptrdiff_t newcount = 0;
+				MPI_CHECK(MPI_Reduce_scatter_block
+						  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
+
+				if (newcount <= recvstart_rank[rank])
+				{
+					curkey = newkey;
+					qcount = newcount;
+				}
+			}
+
+			MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey_lo, 1, MPI_INT64_T, comm));
+			global_startkey_lo[rankcount] = keyrange.end;
+
+			MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count_lo, 1, MPI_INT64_T, comm));
+			global_count_lo[rankcount] = sendcount;
+		}
+
 
 		if (VERBOSE)
 			for (int rr = 0; rr < rankcount; ++rr)
@@ -234,12 +279,20 @@ void dsort_uint32 (
 
 				if (rr == rank)
 				{
-					printf("rank %d: start: %zd -> key %zd, global count %zd\n", rank, recvstart_rank[rank], global_startkey[rank], qcount);
+					printf("rank %d: start: %zd -> global key hi/lo %zd %zd",
+						   rank, recvstart_rank[rank], 
+						   global_startkey_lo[rank], global_startkey_hi[rank]);
+
+					if (global_startkey_lo[rank] != global_startkey_hi[rank])
+						printf("    must add %zd", 
+							   recvstart_rank[rr] - global_count_lo[rankcount]);
+
+					printf("\n");
 					fflush(stdout);
 				}
 				MPI_CHECK(MPI_Barrier(comm));
 			}
-
+/*
 		for (int rr = 0; rr < rankcount; ++rr)
 			local_start[rr] = lb_u32(keys, sendcount, global_startkey[rr]);
 
@@ -249,7 +302,8 @@ void dsort_uint32 (
 			local_histo[rr] = local_start[rr + 1] - local_start[rr];
 
 		local_histo[rankcount] = 0;
-	}
+*/	}
+#if 0
 
 	const ptrdiff_t keyrange_count = keyrange.end - keyrange.begin;
 
@@ -365,6 +419,7 @@ void dsort_uint32 (
 
 		free(global_bas);
 	}
+#endif
 }
 
 int main (
