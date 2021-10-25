@@ -312,7 +312,7 @@ void dsort_uint32 (
 			if (key)
 				key--;
 
-			send_msgstart[rr] = global_bas[key];
+			//send_msgstart[rr] = global_bas[key] + local_start[rr];
 
 			//assert(global_bas[key - 1] < recvstart_rank[rr] || key == keyrange_count);
 			//assert(global_bas[key] >= recvstart_rank[rr] || key == keyrange_count);
