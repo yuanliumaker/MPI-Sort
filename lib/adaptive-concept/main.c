@@ -263,14 +263,13 @@ void dsort_uint32 (
 					qcount = newcount;
 				}
 			}
-
+			
 			MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey_lo, 1, MPI_INT64_T, comm));
 			global_startkey_lo[rankcount] = keyrange.end;
 
 			MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count_lo, 1, MPI_INT64_T, comm));
 			global_count_lo[rankcount] = sendcount;
 		}
-
 
 		if (VERBOSE)
 			for (int rr = 0; rr < rankcount; ++rr)
