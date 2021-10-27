@@ -96,6 +96,35 @@ ptrdiff_t lb_u32 (
 	return first - head;
 }
 
+ptrdiff_t ub_u32 (
+	const uint32_t * first,
+	ptrdiff_t count,
+	const uint32_t val)
+{
+	const uint32_t * const head = first;
+	const uint32_t * it;
+	ptrdiff_t step;
+
+	while (count > 0)
+	{
+		it = first;
+		step = count / 2;
+
+		it += step;
+		if (*it <= val)
+		{
+			first = ++it;
+			count -= step + 1;
+		}
+		else
+			count = step;
+	}
+
+	assert(head <= first);
+
+	return first - head;
+}
+
 ptrdiff_t lb_i64 (
 	const int64_t * first,
 	ptrdiff_t count,
@@ -196,7 +225,7 @@ void dsort_uint32 (
 	/* find an adaptive histogram with rankcount bins */
 	{
 		{
-			ptrdiff_t curkey = keyrange.end, qcount = 0;
+			ptrdiff_t curkey = keyrange.end, qcount = recvstart_rank[rankcount];
 
 			for (ptrdiff_t b = 31; b >= 0; --b)
 			{
@@ -271,7 +300,6 @@ void dsort_uint32 (
 			global_count_lo[rankcount] = sendcount;
 		}
 
-
 		if (VERBOSE)
 			for (int rr = 0; rr < rankcount; ++rr)
 			{
@@ -279,12 +307,13 @@ void dsort_uint32 (
 
 				if (rr == rank)
 				{
-					printf("rank %d: start: %zd -> global key hi/lo %zd %zd",
-						   rank, recvstart_rank[rank], 
-						   global_startkey_lo[rank], global_startkey_hi[rank]);
+					printf("rank %d: start: %zd -> global key hi/lo %zd %zd global count hi/lo %zd %zd",
+						   rank, recvstart_rank[rank],
+						   global_startkey_lo[rank], global_startkey_hi[rank],
+						   global_count_lo[rank], global_count_hi[rank]);
 
 					if (global_startkey_lo[rank] != global_startkey_hi[rank])
-						printf("    must add %zd", 
+						printf("    must add %zd",
 							   recvstart_rank[rr] - global_count_lo[rankcount]);
 
 					printf("\n");
@@ -292,6 +321,60 @@ void dsort_uint32 (
 				}
 				MPI_CHECK(MPI_Barrier(comm));
 			}
+
+		ptrdiff_t sstart[rankcount + 1];
+		sstart[0] = 0;
+		sstart[rankcount] = sendcount;
+
+		/* conflict resolution */
+		for (int rr = 1; rr < rankcount; ++rr)
+		{
+			const ptrdiff_t key = global_startkey_lo[rr];
+			sstart[rr] = lb_u32(keys, sendcount, key);
+
+			const ptrdiff_t gcount = global_count_lo[rr];
+			const ptrdiff_t target = recvstart_rank[rr];
+
+			if (gcount != target)
+			{
+				assert(gcount < target);
+				const ptrdiff_t q = ub_u32(keys, sendcount, key) - sstart[rr];
+				ptrdiff_t qstart = 0;
+				MPI_CHECK(MPI_Exscan(&q, &qstart, 1, MPI_INT64_T, MPI_SUM, comm));
+
+				const ptrdiff_t old = sstart[rr];
+				sstart[rr] += MAX(0, MIN(q, target - gcount - qstart));
+				//printf("sstart[%d] = %zd\n", rr, sstar
+			}
+		}
+
+		ptrdiff_t gscount[rankcount];
+		for (ptrdiff_t rr = 0; rr < rankcount; ++rr)
+		{
+			gscount[rr] = sstart[rr + 1] - sstart[rr];
+			//printf("gscount %d = %zd\n", rr, gscount[rr]);
+		}
+
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, gscount, rankcount, MPI_INT64_T, MPI_SUM, comm));
+
+		ptrdiff_t gsstart[rankcount + 1];
+		gsstart[0] = 0;
+		for (ptrdiff_t rr = 1; rr <= rankcount; ++rr)
+			gsstart[rr] = gsstart[rr - 1] + gscount[rr - 1];
+
+		if (!rank)
+		{
+			printf("gsstart: ");
+			for (int rr = 0; rr <= rankcount; ++rr)
+				printf(" %-3d", gsstart[rr]);
+			printf("\n");
+
+			printf("target : ");
+			for (int rr = 0; rr <= rankcount; ++rr)
+				printf(" %-3d", recvstart_rank[rr]);
+			printf("\n");
+		}
+
 /*
 		for (int rr = 0; rr < rankcount; ++rr)
 			local_start[rr] = lb_u32(keys, sendcount, global_startkey[rr]);

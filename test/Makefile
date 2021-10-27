@@ -6,12 +6,15 @@ CXXFLAGS += -std=c++11
 LDFLAGS += -L../lib
 LDFLAGS := -l:libmpi-sort.a -lm $(LDFLAGS)
 
-GOALS = mpi-sort vanilla-sort percentiles
+GOALS = mpi-sort vanilla-sort vanilla-qsort percentiles
 
 all : $(GOALS)
 
 vanilla-sort : vanilla-sort.cxx
 	$(CXX) $(CXXFLAGS) -o $@ $<
+
+vanilla-qsort : vanilla-qsort.c
+	$(CC) $(CFLAGS) -o $@ $<
 
 % : %.c
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
