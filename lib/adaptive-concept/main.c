@@ -182,18 +182,18 @@ void dsort_uint32 (
 			ptrdiff_t query[rankcount];
 			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
 
-			ptrdiff_t counts[rankcount];
+			ptrdiff_t partials[rankcount];
 			for (int r = 0; r < rankcount; ++r)
-				counts[r] = lb_u32(sendkeys, sendcount, query[r]);
+				partials[r] = lb_u32(sendkeys, sendcount, query[r]);
 			
-			ptrdiff_t newcount = 0;
+			ptrdiff_t answer = 0;
 			MPI_CHECK(MPI_Reduce_scatter_block
-					  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
+					  (partials, &answer, 1, MPI_INT64_T, MPI_SUM, comm));
 
-			if (newcount <= recvstart_rank[rank])
+			if (answer <= recvstart_rank[rank])
 			{
 				curkey = newkey;
-				qcount = newcount;
+				qcount = answer;
 			}
 		}
 			
@@ -208,19 +208,19 @@ void dsort_uint32 (
 	sstart[0] = 0;
 	sstart[rankcount] = sendcount;
 
-	/* conflict resolution */
+	/* refinement stage */
 	for (int r = 1; r < rankcount; ++r)
 	{
 		const ptrdiff_t key = global_startkey[r];
-		sstart[r] = lb_u32(sendkeys, sendcount, key);
-
 		const ptrdiff_t gcount = global_count[r];
 		const ptrdiff_t target = recvstart_rank[r];
 
+		sstart[r] = lb_u32(sendkeys, sendcount, key);
+
+		/* adjustment */
 		if (gcount != target)
 		{
-			const ptrdiff_t entry = sstart[r];
-			assert(entry == 0 || gcount);
+			assert(sstart[r] == 0 || gcount);
 			assert(gcount < target);
 			
 			const ptrdiff_t q = ub_u32(sendkeys, sendcount, key) - sstart[r];
@@ -250,12 +250,13 @@ void dsort_uint32 (
 		MPI_CHECK(MPI_Alltoall(scount, 1, MPI_INT64_T, rcount, 1, MPI_INT64_T, comm));
 
 		ptrdiff_t rstart[rankcount];
-		const ptrdiff_t check = exscan(rankcount, rcount, rstart);
+		const ptrdiff_t __attribute__((unused)) check = exscan(rankcount, rcount, rstart);
 		assert(check == recvcount);
 
 		a2av(sendkeys, scount, sstart, MPI_UNSIGNED, recvkeys, rcount, rstart, comm);
 	}
 
+	/* sort once more */
 	lsort(recvkeys);
 
 #ifndef NDEBUG
