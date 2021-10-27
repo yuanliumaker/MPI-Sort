@@ -109,6 +109,10 @@ ptrdiff_t ub_u32 (
 	return first - head;
 }
 
+void lsort(
+	uint32_t * keys,
+	const ptrdiff_t n);
+
 int VERBOSE = 0;
 
 void dsort_uint32 (
@@ -126,24 +130,7 @@ void dsort_uint32 (
 
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
-	/* local sort */
-	__extension__ void lsort(uint32_t * keys)
-	{
-		__extension__ int compar (
-			const void * a,
-			const void * b )
-		{
-			return (int)((ptrdiff_t)*(uint32_t *)a - (ptrdiff_t)*(uint32_t *)b);
-		}
-
-		qsort(keys, sendcount, sizeof(*keys), compar);
-#ifndef NDEBUG
-		for (ptrdiff_t i = 1; i < sendcount; ++i)
-			assert(keys[i] >= keys[i - 1]);
-#endif
-	}
-
-	lsort(sendkeys);
+	lsort(sendkeys, sendcount);
 
 	range_t keyrange = (range_t) { .begin = sendkeys[0], .end = sendkeys[sendcount - 1] + 1 };
 
@@ -166,7 +153,7 @@ void dsort_uint32 (
 
 	ptrdiff_t global_startkey[rankcountp1], global_count[rankcountp1];
 
-	/* find an adaptive histogram with rankcount bins */
+	/* find approximate splitters location */
 	{
 		ptrdiff_t curkey = keyrange.begin, qcount = 0;
 
@@ -185,7 +172,7 @@ void dsort_uint32 (
 			ptrdiff_t partials[rankcount];
 			for (int r = 0; r < rankcount; ++r)
 				partials[r] = lb_u32(sendkeys, sendcount, query[r]);
-			
+
 			ptrdiff_t answer = 0;
 			MPI_CHECK(MPI_Reduce_scatter_block
 					  (partials, &answer, 1, MPI_INT64_T, MPI_SUM, comm));
@@ -196,7 +183,7 @@ void dsort_uint32 (
 				qcount = answer;
 			}
 		}
-			
+
 		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey, 1, MPI_INT64_T, comm));
 		global_startkey[rankcount] = keyrange.end;
 
@@ -208,7 +195,7 @@ void dsort_uint32 (
 	sstart[0] = 0;
 	sstart[rankcount] = sendcount;
 
-	/* refinement stage */
+	/* refine splitter */
 	for (int r = 1; r < rankcount; ++r)
 	{
 		const ptrdiff_t key = global_startkey[r];
@@ -222,16 +209,16 @@ void dsort_uint32 (
 		{
 			assert(sstart[r] == 0 || gcount);
 			assert(gcount < target);
-			
-			const ptrdiff_t q = ub_u32(sendkeys, sendcount, key) - sstart[r];
-			ptrdiff_t qstart = 0;
-			MPI_CHECK(MPI_Exscan(&q, &qstart, 1, MPI_INT64_T, MPI_SUM, comm));
 
+			ptrdiff_t qstart = 0;
+			/* all R&D efforts of a day went into these 3 lines */
+			const ptrdiff_t q = ub_u32(sendkeys, sendcount, key) - sstart[r];
+			MPI_CHECK(MPI_Exscan(&q, &qstart, 1, MPI_INT64_T, MPI_SUM, comm));
 			sstart[r] += MAX(0, MIN(q, target - gcount - qstart));
 		}
 	}
-	
-#ifndef NDEBUG	
+
+#ifndef NDEBUG
 	ptrdiff_t check[rankcountp1];
 	MPI_CHECK(MPI_Scan(sstart, check, rankcountp1, MPI_INT64_T, MPI_SUM, comm));
 
@@ -257,7 +244,7 @@ void dsort_uint32 (
 	}
 
 	/* sort once more */
-	lsort(recvkeys);
+	lsort(recvkeys, recvcount);
 
 #ifndef NDEBUG
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
