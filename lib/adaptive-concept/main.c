@@ -11,6 +11,8 @@
 #include <common-util.h>
 #include <posix-util.h>
 
+#include "../a2av.h"
+
 typedef struct { ptrdiff_t begin, end; } range_t;
 
 range_t range_keys (
@@ -49,24 +51,6 @@ ptrdiff_t exscan (
 	return s;
 }
 
-ptrdiff_t exscan_inplace (
-    const ptrdiff_t count,
-    ptrdiff_t * const inout)
-{
-    ptrdiff_t s = 0;
-
-    for (ptrdiff_t i = 0; i < count; ++i)
-    {
-		const ptrdiff_t v = inout[i];
-
-		inout[i] = s;
-
-		s += v;
-    }
-
-    return s;
-}
-
 ptrdiff_t lb_u32 (
 	const uint32_t * first,
 	ptrdiff_t count,
@@ -96,13 +80,13 @@ ptrdiff_t lb_u32 (
 	return first - head;
 }
 
-ptrdiff_t lb_i64 (
-	const int64_t * first,
+ptrdiff_t ub_u32 (
+	const uint32_t * first,
 	ptrdiff_t count,
-	const int64_t val)
+	const uint32_t val)
 {
-	const int64_t * const head = first;
-	const int64_t * it;
+	const uint32_t * const head = first;
+	const uint32_t * it;
 	ptrdiff_t step;
 
 	while (count > 0)
@@ -111,7 +95,7 @@ ptrdiff_t lb_i64 (
 		step = count / 2;
 
 		it += step;
-		if (*it < val)
+		if (*it <= val)
 		{
 			first = ++it;
 			count -= step + 1;
@@ -128,9 +112,10 @@ ptrdiff_t lb_i64 (
 int VERBOSE = 0;
 
 void dsort_uint32 (
-	const ptrdiff_t recvcount,
+	uint32_t * sendkeys,
 	const ptrdiff_t sendcount,
-	uint32_t * const keys,
+	uint32_t * recvkeys,
+	const ptrdiff_t recvcount,
 	MPI_Comm comm )
 {
 	READENV(VERBOSE, atoi);
@@ -142,41 +127,31 @@ void dsort_uint32 (
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
 	/* local sort */
+	__extension__ void lsort(uint32_t * keys)
 	{
 		__extension__ int compar (
 			const void * a,
 			const void * b )
 		{
-			return *(uint32_t *)a - *(uint32_t *)b;
+			return (int)((ptrdiff_t)*(uint32_t *)a - (ptrdiff_t)*(uint32_t *)b);
 		}
 
 		qsort(keys, sendcount, sizeof(*keys), compar);
+#ifndef NDEBUG
+		for (ptrdiff_t i = 1; i < sendcount; ++i)
+			assert(keys[i] >= keys[i - 1]);
+#endif
 	}
 
-	range_t keyrange = (range_t) { .begin = keys[0], .end = keys[sendcount - 1] + 1 };
+	lsort(sendkeys);
+
+	range_t keyrange = (range_t) { .begin = sendkeys[0], .end = sendkeys[sendcount - 1] + 1 };
 
 	/* find key ranges */
 	{
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.begin, 1, MPI_INT64_T, MPI_MIN, comm));
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.end, 1, MPI_INT64_T, MPI_MAX, comm));
 	}
-
-	if (VERBOSE)
-		for (int rr = 0; rr < rankcount; ++rr)
-		{
-			MPI_CHECK(MPI_Barrier(comm));
-
-			if (rr == rank)
-			{
-				printf("rank %d:", rank);
-				for (int i = 0; i < recvcount; ++i)
-					printf(" %u", keys[i]);
-				printf("\n");
-
-			}
-				fflush(stdout);
-			MPI_CHECK(MPI_Barrier(comm));
-		}
 
 	ptrdiff_t recvstart_rank[rankcountp1];
 
@@ -189,235 +164,103 @@ void dsort_uint32 (
 		MPI_CHECK(MPI_Allgather(&myend, 1, MPI_INT64_T, recvstart_rank + 1, 1, MPI_INT64_T, comm));
 	}
 
-	ptrdiff_t local_histo[rankcountp1], local_start[rankcountp1];
-	ptrdiff_t global_startkey_hi[rankcountp1], global_startkey_lo[rankcountp1];
-	ptrdiff_t global_count_hi[rankcountp1], global_count_lo[rankcountp1];
+	ptrdiff_t global_startkey[rankcountp1], global_count[rankcountp1];
 
 	/* find an adaptive histogram with rankcount bins */
 	{
+		ptrdiff_t curkey = keyrange.begin, qcount = 0;
+
+		for (ptrdiff_t b = 31; b >= 0; --b)
 		{
-			ptrdiff_t curkey = keyrange.end, qcount = 0;
+			const ptrdiff_t delta = 1ll << b;
 
-			for (ptrdiff_t b = 31; b >= 0; --b)
-			{
-				const ptrdiff_t delta = 1ll << b;
+			if (keyrange.end - keyrange.begin < delta)
+				continue;
 
-				if (keyrange.end - keyrange.begin < delta)
-					continue;
+			const ptrdiff_t newkey = MIN(keyrange.end - 1, curkey + delta);
 
-				const ptrdiff_t newkey = MAX(0, curkey - delta);
+			ptrdiff_t query[rankcount];
+			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
 
-				ptrdiff_t query[rankcount];
-				MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
-
-				ptrdiff_t counts[rankcount];
-				for (int rr = 0; rr < rankcount; ++rr)
-					/* we count all keys SMALLER THAN query */
-					counts[rr] = lb_u32(keys, sendcount, query[rr]);
-
-				ptrdiff_t newcount = 0;
-				MPI_CHECK(MPI_Reduce_scatter_block
-						  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
-
-				if (newcount >= recvstart_rank[rank])
-				{
-					curkey = newkey;
-					qcount = newcount;
-				}
-			}
-
-			MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey_hi, 1, MPI_INT64_T, comm));
-			global_startkey_hi[rankcount] = keyrange.end;
-
-			MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count_hi, 1, MPI_INT64_T, comm));
-			global_count_hi[rankcount] = sendcount;
-		}
-
-		{
-			ptrdiff_t curkey = keyrange.begin, qcount = 0;
-
-			for (ptrdiff_t b = 31; b >= 0; --b)
-			{
-				const ptrdiff_t delta = 1ll << b;
-
-				if (keyrange.end - keyrange.begin < delta)
-					continue;
-
-				const ptrdiff_t newkey = MIN(keyrange.end, curkey + delta);
-
-				ptrdiff_t query[rankcount];
-				MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
-
-				ptrdiff_t counts[rankcount];
-				for (int rr = 0; rr < rankcount; ++rr)
-					/* we count all keys SMALLER THAN query */
-					counts[rr] = lb_u32(keys, sendcount, query[rr]);
-
-				ptrdiff_t newcount = 0;
-				MPI_CHECK(MPI_Reduce_scatter_block
-						  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
-
-				if (newcount <= recvstart_rank[rank])
-				{
-					curkey = newkey;
-					qcount = newcount;
-				}
-			}
+			ptrdiff_t counts[rankcount];
+			for (int r = 0; r < rankcount; ++r)
+				counts[r] = lb_u32(sendkeys, sendcount, query[r]);
 			
-			MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey_lo, 1, MPI_INT64_T, comm));
-			global_startkey_lo[rankcount] = keyrange.end;
+			ptrdiff_t newcount = 0;
+			MPI_CHECK(MPI_Reduce_scatter_block
+					  (counts, &newcount, 1, MPI_INT64_T, MPI_SUM, comm));
 
-			MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count_lo, 1, MPI_INT64_T, comm));
-			global_count_lo[rankcount] = sendcount;
-		}
-
-		if (VERBOSE)
-			for (int rr = 0; rr < rankcount; ++rr)
+			if (newcount <= recvstart_rank[rank])
 			{
-				MPI_CHECK(MPI_Barrier(comm));
-
-				if (rr == rank)
-				{
-					printf("rank %d: start: %zd -> global key hi/lo %zd %zd",
-						   rank, recvstart_rank[rank], 
-						   global_startkey_lo[rank], global_startkey_hi[rank]);
-
-					if (global_startkey_lo[rank] != global_startkey_hi[rank])
-						printf("    must add %zd", 
-							   recvstart_rank[rr] - global_count_lo[rankcount]);
-
-					printf("\n");
-					fflush(stdout);
-				}
-				MPI_CHECK(MPI_Barrier(comm));
+				curkey = newkey;
+				qcount = newcount;
 			}
-/*
-		for (int rr = 0; rr < rankcount; ++rr)
-			local_start[rr] = lb_u32(keys, sendcount, global_startkey[rr]);
-
-		local_start[rankcount] = sendcount;
-
-		for (int rr = 0; rr < rankcount; ++rr)
-			local_histo[rr] = local_start[rr + 1] - local_start[rr];
-
-		local_histo[rankcount] = 0;
-*/	}
-#if 0
-
-	const ptrdiff_t keyrange_count = keyrange.end - keyrange.begin;
-
-	ptrdiff_t send_msgstart[rankcountp1], send_msglen[rankcount], send_headlen[rankcount], recv_msglen[rankcount], recv_headlen[rankcount];
-
-	/* compute msgstarts, msglens, and headlens */
-	{
-		ptrdiff_t * global_bas = calloc(sizeof(*global_bas), rankcountp1);
-
-		/* global_bas : "vertical" exclusive scan */
-		{
-			MPI_CHECK(MPI_Exscan(local_histo, global_bas, rankcountp1, MPI_INT64_T, MPI_SUM, comm));
-
-			ptrdiff_t * tmp = NULL;
-			POSIX_CHECK(tmp = malloc(rankcountp1 * sizeof(*tmp)));
-
-			/* TODO: optimize as bcast global_bas + histo from rank rc - 1 */
-			MPI_CHECK(MPI_Allreduce(local_histo, tmp, rankcountp1, MPI_INT64_T, MPI_SUM, comm));
-
-			exscan_inplace(rankcountp1, tmp);
-
-			for (ptrdiff_t i = 0; i < rankcountp1; ++i)
-				global_bas[i] += tmp[i];
-
-			free(tmp);
 		}
+			
+		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey, 1, MPI_INT64_T, comm));
+		global_startkey[rankcount] = keyrange.end;
 
+		MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count, 1, MPI_INT64_T, comm));
+		global_count[rankcount] = sendcount;
+	}
+
+	ptrdiff_t sstart[rankcountp1];
+	sstart[0] = 0;
+	sstart[rankcount] = sendcount;
+
+	/* conflict resolution */
+	for (int r = 1; r < rankcount; ++r)
+	{
+		const ptrdiff_t key = global_startkey[r];
+		sstart[r] = lb_u32(sendkeys, sendcount, key);
+
+		const ptrdiff_t gcount = global_count[r];
+		const ptrdiff_t target = recvstart_rank[r];
+
+		if (gcount != target)
+		{
+			const ptrdiff_t entry = sstart[r];
+			assert(entry == 0 || gcount);
+			assert(gcount < target);
+			
+			const ptrdiff_t q = ub_u32(sendkeys, sendcount, key) - sstart[r];
+			ptrdiff_t qstart = 0;
+			MPI_CHECK(MPI_Exscan(&q, &qstart, 1, MPI_INT64_T, MPI_SUM, comm));
+
+			sstart[r] += MAX(0, MIN(q, target - gcount - qstart));
+		}
+	}
+	
+#ifndef NDEBUG	
+	ptrdiff_t check[rankcountp1];
+	MPI_CHECK(MPI_Scan(sstart, check, rankcountp1, MPI_INT64_T, MPI_SUM, comm));
+
+	if (rankcount == rank + 1)
+		for (int r = 0; r <= rank; ++r)
+			assert(recvstart_rank[r] == check[r]);
+#endif
+
+	/* send around */
+	{
+		ptrdiff_t scount[rankcount], rcount[rankcount];
+
+		for (int r = 0; r < rankcount; ++r)
+			scount[r] = sstart[r + 1] - sstart[r];
+
+		MPI_CHECK(MPI_Alltoall(scount, 1, MPI_INT64_T, rcount, 1, MPI_INT64_T, comm));
+
+		ptrdiff_t rstart[rankcount];
+		const ptrdiff_t check = exscan(rankcount, rcount, rstart);
+		assert(check == recvcount);
+
+		a2av(sendkeys, scount, sstart, MPI_UNSIGNED, recvkeys, rcount, rstart, comm);
+	}
+
+	lsort(recvkeys);
 
 #ifndef NDEBUG
-		{
-			const ptrdiff_t local_count = sendcount;
-
-			ptrdiff_t global_count = 0;
-			MPI_CHECK(MPI_Allreduce(&local_count, &global_count, 1, MPI_INT64_T, MPI_SUM, comm));
-
-			for (int i = 0; i <= rankcount; ++i)
-				assert(global_bas[i] >= 0 && global_bas[i] <= global_count);
-
-			for (int i = 1; i <= rankcount; ++i)
-				assert(global_bas[i - 1] <= global_bas[i]);
-
-			for (int rr = 0; rr <= rankcount; ++rr)
-				assert(recvstart_rank[rr] >= 0);
-
-			for (int rr = 1; rr <= rankcount; ++rr)
-				assert(recvstart_rank[rr - 1] <= recvstart_rank[rr]);
-
-			assert(recvstart_rank[rankcount] == global_count);
-		}
-#endif
-
-		/* compute send msg start */
-		send_msgstart[0] = 0;
-#if 1
-		for (int rr = 1; rr < rankcount; ++rr)
-		{
-			//const ptrdiff_t key = local_start[rr];
-			ptrdiff_t key = lb_i64(global_bas, rankcountp1, recvstart_rank[rr]);
-
-			if (key)
-				key--;
-
-			//send_msgstart[rr] = global_bas[key] + local_start[rr];
-
-			//assert(global_bas[key - 1] < recvstart_rank[rr] || key == keyrange_count);
-			//assert(global_bas[key] >= recvstart_rank[rr] || key == keyrange_count);
-
-		}
-		send_msgstart[rankcount] = sendcount;
-#endif
-
-		if (VERBOSE)
-			for (int c = 0; c < 4; ++c)
-			for (int rr = 0; rr < rankcount; ++rr)
-			{
-				MPI_CHECK(MPI_Barrier(comm));
-
-				if (rr == rank)
-				{
-					if (0 == c)
-					{
-						printf("rank %d:", rank);
-						for (int i = 0; i <= rankcount; ++i)
-							printf(" %-3zd", global_bas[i]);
-						printf("\n");
-					}
-					/*else if (1 == c)
-					{
-						printf("rank %d local count:", rank);
-						for (int i = 0; i <= rankcount; ++i)
-							printf(" %03zd", local_histo[i]);
-						printf("\n");
-					}
-					else if (2 == c)
-					{
-						printf("rank %d local start:", rank);
-						for (int i = 0; i <= rankcount; ++i)
-							printf(" %03zd", local_start[i]);
-						printf("\n");
-						}*/
-
-					else if (3 == c)
-					{
-						printf("rank %d msg_start:", rank);
-						for (int i = 0; i <= rankcount; ++i)
-							printf(" %03zd", send_msgstart[rr]);
-						printf("\n");
-					}
-						fflush(stdout);
-				}
-				MPI_CHECK(MPI_Barrier(comm));
-			}
-
-		free(global_bas);
-	}
+	for(ptrdiff_t i = 1; i < recvcount; ++i)
+		assert(recvkeys[i - 1] <= recvkeys[i]);
 #endif
 }
 
@@ -475,20 +318,9 @@ int main (
 	if (!r)
 		printf("processing %zd elements\n", ic);
 
-	/* homogeneous blocksize */
-	//const ptrdiff_t bsz = ((ic + rc - 1) / rc);
 	workload_t load = divide_workload(r, rc, ic);
 
-	/* local element range */
-	//ptrdiff_t rangelo = (r + 0) * bsz;
-	//ptrdiff_t rangehi = (r + 1) * bsz;
-
-	//rangehi = MIN(rangehi, ic - 0);
-	//rangelo = MIN(rangelo, ic - 0);
-	const ptrdiff_t rangelo = load.start;
-	const ptrdiff_t rangehi = load.start + load.count;
-
-	const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
+	const ptrdiff_t rangec = load.count;
 
 	void * keys = NULL;
 
@@ -499,22 +331,24 @@ int main (
 		MPI_CHECK(MPI_File_open
 				  (comm, argv[1], MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
 
-		keys = malloc(rangec * esz);
-		assert(keys);
+		POSIX_CHECK(keys = malloc(rangec * esz));
 
 		MPI_CHECK(MPI_File_read_at_all
-				  (f, rangelo * esz, keys, rangec, MPI_UNSIGNED, MPI_STATUS_IGNORE));
+				  (f, load.start * esz, keys, rangec, MPI_UNSIGNED, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}
 
 	double tbegin = MPI_Wtime();
 
+	void * sortedkeys = NULL;
+	POSIX_CHECK(sortedkeys = malloc(rangec * esz));
+
 	int NTIMES = 1;
 	READENV(NTIMES, atoi);
 
 	for (int t = 0; t < NTIMES; ++t)
-		dsort_uint32(rangec, rangec, keys, comm);
+		dsort_uint32(keys, load.count, sortedkeys, load.count, comm);
 
 	double tend = MPI_Wtime();
 
@@ -527,7 +361,7 @@ int main (
 		MPI_CHECK(MPI_File_set_size(f, ic * esz));
 
 		MPI_CHECK(MPI_File_write_at_all
-				  (f, rangelo * esz, keys, rangec, MPI_UNSIGNED, MPI_STATUS_IGNORE));
+				  (f, load.start * esz, sortedkeys, rangec, MPI_UNSIGNED, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}
