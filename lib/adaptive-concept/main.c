@@ -176,10 +176,14 @@ void dsort_uint32 (
 			const void * a,
 			const void * b )
 		{
-			return *(uint32_t *)a - *(uint32_t *)b;
+			return (*(uint32_t *)a < *(uint32_t *)b) ? -1 : 1;
 		}
 
 		qsort(keys, sendcount, sizeof(*keys), compar);
+#ifndef NDEBUG
+		for (ptrdiff_t i = 1; i < sendcount; ++i)
+			assert(keys[i] >= keys[i - 1]);
+#endif
 	}
 
 	range_t keyrange = (range_t) { .begin = keys[0], .end = keys[sendcount - 1] + 1 };
@@ -188,9 +192,10 @@ void dsort_uint32 (
 	{
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.begin, 1, MPI_INT64_T, MPI_MIN, comm));
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.end, 1, MPI_INT64_T, MPI_MAX, comm));
+		printf("RANGE %zd %zd\n", keyrange.begin, keyrange.end);
 	}
 
-	if (VERBOSE)
+	/*if (VERBOSE)
 		for (int rr = 0; rr < rankcount; ++rr)
 		{
 			MPI_CHECK(MPI_Barrier(comm));
@@ -206,7 +211,7 @@ void dsort_uint32 (
 				fflush(stdout);
 			MPI_CHECK(MPI_Barrier(comm));
 		}
-
+	*/
 	ptrdiff_t recvstart_rank[rankcountp1];
 
 	/* compute recvstart_rank */
@@ -263,7 +268,7 @@ void dsort_uint32 (
 		}
 
 		{
-			ptrdiff_t curkey = keyrange.begin, qcount = 0;
+			ptrdiff_t curkey = keyrange.begin - 1, qcount = 0;
 
 			for (ptrdiff_t b = 31; b >= 0; --b)
 			{
@@ -272,7 +277,7 @@ void dsort_uint32 (
 				if (keyrange.end - keyrange.begin < delta)
 					continue;
 
-				const ptrdiff_t newkey = MIN(keyrange.end, curkey + delta);
+				const ptrdiff_t newkey = MIN(keyrange.end - 1, curkey + delta);
 
 				ptrdiff_t query[rankcount];
 				MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
@@ -300,6 +305,14 @@ void dsort_uint32 (
 			global_count_lo[rankcount] = sendcount;
 		}
 
+		MPI_Barrier(comm);
+		{
+			ptrdiff_t tmp[3] = {keys[0], keys[1], keys[2]};
+			printf("global_startkey_lo[0] = %zd -> lb_u32 = %zd [0: %zd %zd %zd ...]\n",
+				   global_startkey_lo[0], lb_u32(keys, sendcount, global_startkey_lo[0]), tmp[0], tmp[1], tmp[2]);
+			assert(lb_u32(keys, sendcount, global_startkey_lo[0]) == 0);
+		}
+
 		if (VERBOSE)
 			for (int rr = 0; rr < rankcount; ++rr)
 			{
@@ -312,15 +325,16 @@ void dsort_uint32 (
 						   global_startkey_lo[rank], global_startkey_hi[rank],
 						   global_count_lo[rank], global_count_hi[rank]);
 
-					if (global_startkey_lo[rank] != global_startkey_hi[rank])
-						printf("    must add %zd",
-							   recvstart_rank[rr] - global_count_lo[rankcount]);
+					//if (global_startkey_lo[rank] != global_startkey_hi[rank])
+					//		printf("    must add %zd",
+					//recvstart_rank[rr] - global_count_lo[rankcount]);
 
 					printf("\n");
 					fflush(stdout);
 				}
 				MPI_CHECK(MPI_Barrier(comm));
 			}
+
 
 		ptrdiff_t sstart[rankcount + 1];
 		sstart[0] = 0;
@@ -337,16 +351,23 @@ void dsort_uint32 (
 
 			if (gcount != target)
 			{
-				assert(gcount < target);
+				const ptrdiff_t entry = sstart[rr];
+				assert(entry == 0 || gcount);
+		assert(gcount < target);
 				const ptrdiff_t q = ub_u32(keys, sendcount, key) - sstart[rr];
 				ptrdiff_t qstart = 0;
 				MPI_CHECK(MPI_Exscan(&q, &qstart, 1, MPI_INT64_T, MPI_SUM, comm));
 
 				const ptrdiff_t old = sstart[rr];
-				sstart[rr] += MAX(0, MIN(q, target - gcount - qstart));
+				const ptrdiff_t added = MAX(0, MIN(q, target - gcount - qstart));
+				sstart[rr] += added;
+				if (1 == rr)
+					printf("rank %d conflict resolution q %zd, target %zd, missing %zd, added %d for key %u -> base %zd  [%zd %zd %zd ...]\n",
+						   rank, q, target, target - gcount, added, key, entry, (ptrdiff_t)keys[entry], (ptrdiff_t)keys[entry + 1], (ptrdiff_t)keys[entry + 2]);
 				//printf("sstart[%d] = %zd\n", rr, sstar
 			}
 		}
+		MPI_CHECK(MPI_Barrier(comm));
 
 		ptrdiff_t gscount[rankcount];
 		for (ptrdiff_t rr = 0; rr < rankcount; ++rr)
@@ -362,6 +383,7 @@ void dsort_uint32 (
 		for (ptrdiff_t rr = 1; rr <= rankcount; ++rr)
 			gsstart[rr] = gsstart[rr - 1] + gscount[rr - 1];
 
+		if (VERBOSE)
 		if (!rank)
 		{
 			printf("gsstart: ");
@@ -374,6 +396,9 @@ void dsort_uint32 (
 				printf(" %-3d", recvstart_rank[rr]);
 			printf("\n");
 		}
+
+		for (int rr = 0; rr <= rank; ++rr)
+			assert(recvstart_rank[rr] == gsstart[rr]);
 
 /*
 		for (int rr = 0; rr < rankcount; ++rr)
