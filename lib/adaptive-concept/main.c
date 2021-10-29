@@ -189,33 +189,37 @@ void dsort_uint32 (
 
 		MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count, 1, MPI_INT64_T, comm));
 		global_count[rankcount] = sendcount;
+
+		for (int r = 0; r < rankcount; ++r)
+			assert(global_count[r] <= recvcount_rank[r]);
 	}
 
 	ptrdiff_t sstart[rankcountp1];
-	sstart[0] = 0;
-	sstart[rankcount] = sendcount;
 
-	/* refine splitter */
-	for (int r = 1; r < rankcount; ++r)
+	/* compute sstart */
 	{
-		const ptrdiff_t key = global_startkey[r];
-		const ptrdiff_t gcount = global_count[r];
-		const ptrdiff_t target = recvstart_rank[r];
+		sstart[0] = 0;
 
-		sstart[r] = lb_u32(sendkeys, sendcount, key);
+		for (int r = 1; r < rankcount; ++r)
+			sstart[r] = lb_u32(sendkeys, sendcount, global_startkey[r]);
 
-		/* adjustment */
-		if (gcount != target)
-		{
-			assert(sstart[r] == 0 || gcount);
-			assert(gcount < target);
+		sstart[rankcount] = sendcount;
 
-			ptrdiff_t qstart = 0;
-			/* all R&D efforts of a day went into these 3 lines */
-			const ptrdiff_t q = ub_u32(sendkeys, sendcount, key) - sstart[r];
-			MPI_CHECK(MPI_Exscan(&q, &qstart, 1, MPI_INT64_T, MPI_SUM, comm));
-			sstart[r] += MAX(0, MIN(q, target - gcount - qstart));
-		}
+		ptrdiff_t q[rankcount];
+		memset(q, 0, sizeof(q));
+
+		for (int r = 1; r < rankcount; ++r)
+			/* mismatch -- we need to take some more */
+			if (global_count[r] != recvstart_rank[r])
+				q[r] = ub_u32(sendkeys, sendcount, global_startkey[r]) - sstart[r];
+
+		ptrdiff_t qstart[rankcount];
+		memset(qstart, 0, sizeof(qstart));
+		MPI_CHECK(MPI_Exscan(q, qstart, rankcount, MPI_INT64_T, MPI_SUM, comm));
+
+		for (int r = 1; r < rankcount; ++r)
+			if (global_count[r] != recvstart_rank[r])
+				sstart[r] += MAX(0, MIN(q[r], recvstart_rank[r] - global_count[r] - qstart[r]));
 	}
 
 #ifndef NDEBUG
