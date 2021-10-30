@@ -2,6 +2,9 @@ CFLAGS += -std=c99
 CFLAGS += -I../include
 CFLAGS += -fvisibility=hidden -fPIC
 
+CFLAGS += -Wno-unused-variable
+CFLAGS += -Wno-unknown-pragmas
+
 tuned ?= 1
 
 ifeq "$(tuned)" "1"
