@@ -1,5 +1,6 @@
-#include <stdlib.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 
 #include <assert.h>
@@ -13,26 +14,21 @@
 
 #include "../a2av.h"
 
-typedef struct { ptrdiff_t begin, end; } range_t;
+#define _CAT(a, b) a ## b
+#define CAT(a, b) _CAT(a, b)
+typedef CAT(CAT(uint, _KEYBITS_), _t) KEY_T;
 
-range_t range_keys (
-	const uint32_t * const restrict in,
-	const ptrdiff_t count)
-{
-	uint32_t lmin = in[0], lmax = in[0];
+#define LSORT CAT(lsort_u, _KEYBITS_)
+#define MPI_KEY CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
 
-	for (ptrdiff_t i = 1; i < count; ++i)
-	{
-		const int s = in[i];
+void lsortu(
+	const ptrdiff_t e,
+	const ptrdiff_t c,
+	void * k );
 
-		lmin = MIN(lmin, s);
-		lmax = MAX(lmax, s);
-	}
+typedef struct { KEY_T min, max; } range_t;
 
-	return (range_t){ lmin, 1 + (ptrdiff_t)lmax };
-}
-
-ptrdiff_t exscan (
+static ptrdiff_t exscan (
 	const ptrdiff_t count,
 	const ptrdiff_t * const in,
 	ptrdiff_t * const out )
@@ -51,13 +47,13 @@ ptrdiff_t exscan (
 	return s;
 }
 
-ptrdiff_t lb_u32 (
-	const uint32_t * first,
+static ptrdiff_t lb (
+	const KEY_T * first,
 	ptrdiff_t count,
-	const uint32_t val)
+	const KEY_T val)
 {
-	const uint32_t * const head = first;
-	const uint32_t * it;
+	const KEY_T * const head = first;
+	const KEY_T * it;
 	ptrdiff_t step;
 
 	while (count > 0)
@@ -80,13 +76,13 @@ ptrdiff_t lb_u32 (
 	return first - head;
 }
 
-ptrdiff_t ub_u32 (
-	const uint32_t * first,
+static ptrdiff_t ub (
+	const KEY_T * first,
 	ptrdiff_t count,
-	const uint32_t val)
+	const KEY_T val)
 {
-	const uint32_t * const head = first;
-	const uint32_t * it;
+	const KEY_T * const head = first;
+	const KEY_T * it;
 	ptrdiff_t step;
 
 	while (count > 0)
@@ -109,16 +105,12 @@ ptrdiff_t ub_u32 (
 	return first - head;
 }
 
-void lsort(
-	uint32_t * keys,
-	const ptrdiff_t n);
-
 int VERBOSE = 0;
 
-void dsort_uint32 (
-	uint32_t * sendkeys,
+void sparse_sort (
+	KEY_T * sendkeys,
 	const ptrdiff_t sendcount,
-	uint32_t * recvkeys,
+	KEY_T * recvkeys,
 	const ptrdiff_t recvcount,
 	MPI_Comm comm )
 {
@@ -130,14 +122,14 @@ void dsort_uint32 (
 
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
-	lsort(sendkeys, sendcount);
+	lsortu(sizeof(KEY_T), sendcount, sendkeys);
 
-	range_t keyrange = (range_t) { .begin = sendkeys[0], .end = sendkeys[sendcount - 1] + 1 };
+	range_t keyrange = (range_t) { .min = sendkeys[0], .max = sendkeys[sendcount - 1] };
 
 	/* find key ranges */
 	{
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.begin, 1, MPI_INT64_T, MPI_MIN, comm));
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.end, 1, MPI_INT64_T, MPI_MAX, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.min, 1, MPI_UINT64_T, MPI_MIN, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &keyrange.max, 1, MPI_UINT64_T, MPI_MAX, comm));
 	}
 
 	ptrdiff_t recvstart_rank[rankcountp1];
@@ -151,27 +143,28 @@ void dsort_uint32 (
 		MPI_CHECK(MPI_Allgather(&myend, 1, MPI_INT64_T, recvstart_rank + 1, 1, MPI_INT64_T, comm));
 	}
 
-	ptrdiff_t global_startkey[rankcountp1], global_count[rankcountp1];
+	KEY_T global_startkey[rankcount];
+	ptrdiff_t global_count[rankcount];
 
 	/* find approximate splitters location */
 	{
-		ptrdiff_t curkey = keyrange.begin, qcount = 0;
+		size_t curkey = keyrange.min, qcount = 0;
 
-		for (ptrdiff_t b = 31; b >= 0; --b)
+		for (KEY_T b = _KEYBITS_ - 1; b < _KEYBITS_; --b)
 		{
-			const ptrdiff_t delta = 1ll << b;
+			const KEY_T delta = ((KEY_T)1) << b;
 
-			if (keyrange.end - keyrange.begin < delta)
+			if (keyrange.max - keyrange.min < delta)
 				continue;
 
-			const ptrdiff_t newkey = MIN(keyrange.end - 1, curkey + delta);
+			const KEY_T newkey = MIN(keyrange.max, curkey + delta);
 
-			ptrdiff_t query[rankcount];
-			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_INT64_T, query, 1, MPI_INT64_T, comm));
+			KEY_T query[rankcount];
+			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_KEY, query, 1, MPI_KEY, comm));
 
 			ptrdiff_t partials[rankcount];
 			for (int r = 0; r < rankcount; ++r)
-				partials[r] = lb_u32(sendkeys, sendcount, query[r]);
+				partials[r] = lb(sendkeys, sendcount, query[r]);
 
 			ptrdiff_t answer = 0;
 			MPI_CHECK(MPI_Reduce_scatter_block
@@ -184,14 +177,11 @@ void dsort_uint32 (
 			}
 		}
 
-		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_INT64_T, global_startkey, 1, MPI_INT64_T, comm));
-		global_startkey[rankcount] = keyrange.end;
-
+		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_KEY, global_startkey, 1, MPI_KEY, comm));
 		MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count, 1, MPI_INT64_T, comm));
-		global_count[rankcount] = sendcount;
 
 		for (int r = 0; r < rankcount; ++r)
-			assert(global_count[r] <= recvcount_rank[r]);
+			assert(global_count[r] <= recvstart_rank[r]);
 	}
 
 	ptrdiff_t sstart[rankcountp1];
@@ -201,7 +191,7 @@ void dsort_uint32 (
 		sstart[0] = 0;
 
 		for (int r = 1; r < rankcount; ++r)
-			sstart[r] = lb_u32(sendkeys, sendcount, global_startkey[r]);
+			sstart[r] = lb(sendkeys, sendcount, global_startkey[r]);
 
 		sstart[rankcount] = sendcount;
 
@@ -211,7 +201,7 @@ void dsort_uint32 (
 		for (int r = 1; r < rankcount; ++r)
 			/* mismatch -- we need to take some more */
 			if (global_count[r] != recvstart_rank[r])
-				q[r] = ub_u32(sendkeys, sendcount, global_startkey[r]) - sstart[r];
+				q[r] = ub(sendkeys, sendcount, global_startkey[r]) - sstart[r];
 
 		ptrdiff_t qstart[rankcount];
 		memset(qstart, 0, sizeof(qstart));
@@ -244,11 +234,11 @@ void dsort_uint32 (
 		const ptrdiff_t __attribute__((unused)) check = exscan(rankcount, rcount, rstart);
 		assert(check == recvcount);
 
-		a2av(sendkeys, scount, sstart, MPI_UNSIGNED, recvkeys, rcount, rstart, comm);
+		a2av(sendkeys, scount, sstart, MPI_KEY, recvkeys, rcount, rstart, comm);
 	}
 
 	/* sort once more */
-	lsort(recvkeys, recvcount);
+	lsortu(sizeof(KEY_T), recvcount, recvkeys);
 
 #ifndef NDEBUG
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
@@ -281,15 +271,15 @@ int main (
 	{
 		if (!r)
 			fprintf(stderr,
-					"usage: %s <path/to/in-uint32.raw> <path/to/output.raw>\n",
-					argv[0]);
+					"usage: %s <path/to/in-uint%d.raw> <path/to/output.raw>\n",
+					argv[0], _KEYBITS_);
 
 		MPI_CHECK(MPI_Finalize());
 
 		return EXIT_FAILURE;
 	}
 
-	const ptrdiff_t esz = 4;
+	const ptrdiff_t esz = _KEYBITS_ / 8;
 
 	/* item count */
 	ptrdiff_t ic = 0;
@@ -326,7 +316,7 @@ int main (
 		POSIX_CHECK(keys = malloc(rangec * esz));
 
 		MPI_CHECK(MPI_File_read_at_all
-				  (f, load.start * esz, keys, rangec, MPI_UNSIGNED, MPI_STATUS_IGNORE));
+				  (f, load.start * esz, keys, rangec, MPI_KEY, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}
@@ -340,7 +330,7 @@ int main (
 	READENV(NTIMES, atoi);
 
 	for (int t = 0; t < NTIMES; ++t)
-		dsort_uint32(keys, load.count, sortedkeys, load.count, comm);
+		sparse_sort(keys, load.count, sortedkeys, load.count, comm);
 
 	double tend = MPI_Wtime();
 
@@ -353,7 +343,7 @@ int main (
 		MPI_CHECK(MPI_File_set_size(f, ic * esz));
 
 		MPI_CHECK(MPI_File_write_at_all
-				  (f, load.start * esz, sortedkeys, rangec, MPI_UNSIGNED, MPI_STATUS_IGNORE));
+				  (f, load.start * esz, sortedkeys, rangec, MPI_KEY, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}

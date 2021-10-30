@@ -88,7 +88,7 @@ int main (
 	else if (!strcmp("uint64", argv[1]))
 	{
 		esz = 8;
-		type = MPI_UNSIGNED_LONG;
+		type = MPI_UINT64_T;
 	}
 	else if (!strcmp("float", argv[1]))
 	{
