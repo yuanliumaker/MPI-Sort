@@ -66,7 +66,7 @@ static void sort_kv_indirect (
 	KI_t * t = (KI_t *)malloc(sizeof(*t) * c);
 
 	for (C i = 0; i < c; ++i)
-		t[i] = (KI_t){ .first = k[i], .second = i };
+		t[i] = std::make_pair(k[i], i);
 
 	std::sort(t, t + c);
 
@@ -107,7 +107,7 @@ static void sort_kv_direct (
 	KV_t * t = (KV_t *)malloc(sizeof(*t) * c);
 
 	for (C i = 0; i < c; ++i)
-		t[i] = (KV_t){ .first = k[i], .second = v[i] };
+		t[i] = std::make_pair(k[i], v[i]);
 
 	std::sort(t, t + c);
 
@@ -171,10 +171,15 @@ static void sort_bykey (
 	K * k,
 	void * v )
 {
-	if ((ptrdiff_t)std::numeric_limits<uint32_t>::max() >= c)
-		sort_bykey_t(vsz, (uint32_t)c, k, v);
+	/* why signed integers? we want to trigger gatherdd
+	   this is based on a speculation of mine,
+	   that finally gatherdd is finally faster than scalar loads on
+	   microarchs in 2020+ */
+
+	if ((ptrdiff_t)std::numeric_limits<int32_t>::max() >= c)
+		sort_bykey_t(vsz, (int32_t)c, k, v);
 	else
-		sort_bykey_t(vsz, (uint64_t)c, k, v);
+		sort_bykey_t(vsz, (int64_t)c, k, v);
 }
 
 template < typename T >
