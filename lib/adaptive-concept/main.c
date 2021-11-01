@@ -20,10 +20,13 @@ typedef CAT(CAT(uint, _KEYBITS_), _t) KEY_T;
 
 #define MPI_KEY CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
 
-void lsortu(
-	const ptrdiff_t e,
-	const ptrdiff_t c,
-	void * k );
+void lsort (
+	const int stable,
+	const ptrdiff_t key_bytesize,
+	const ptrdiff_t value_bytesize,
+	const ptrdiff_t count,
+	void * keys,
+	void * values);
 
 static ptrdiff_t exscan (
 	const ptrdiff_t count,
@@ -119,7 +122,7 @@ void sparse_sort (
 
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
-	lsortu(sizeof(KEY_T), sendcount, sendkeys);
+	lsort(0, sizeof(KEY_T), 0, sendcount, sendkeys, NULL);
 	
 	KEY_T krmin = sendkeys[0], krmax = sendkeys[sendcount - 1];
 
@@ -235,7 +238,7 @@ void sparse_sort (
 	}
 
 	/* sort once more */
-	lsortu(sizeof(KEY_T), recvcount, recvkeys);
+	lsort(0, sizeof(KEY_T), 0, recvcount, recvkeys, NULL);
 
 #ifndef NDEBUG
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
