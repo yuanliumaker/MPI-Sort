@@ -5,8 +5,8 @@ CFLAGS += -fvisibility=hidden -fPIC
 CFLAGS += -Wno-unused-variable
 CFLAGS += -Wno-unknown-pragmas
 
+CXXFLAGS += -fno-exceptions -fno-rtti -static
 CXXFLAGS += -fvisibility=hidden -fPIC
-CXXFLAGS += -std=c++11
 
 OBJS = \
 	dispatch.o \

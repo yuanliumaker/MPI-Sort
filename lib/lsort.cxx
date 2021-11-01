@@ -1,12 +1,13 @@
 #include <cstdio>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <cassert>
 
 #include <limits>
 #include <algorithm>
 #include <utility>
+
+#include <stdint.h>
 
 template < typename C, typename I, typename V >
 static void gather (

@@ -99,7 +99,7 @@ static ptrdiff_t ub (
 	return first - head;
 }
 
-void CAT(sparse_u, _KEYBITS_) (
+void CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		const int stable,
 		KEY_T * sendkeys,
 		void * sendvals,

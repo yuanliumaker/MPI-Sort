@@ -4,7 +4,7 @@ CFLAGS += -std=c99
 CXXFLAGS += -std=c++11
 
 LDFLAGS += -L../lib
-LDFLAGS := -l:libmpi-sort.a -lm $(LDFLAGS)
+LDFLAGS := -l:libmpi-sort.a -lstdc++ -lm $(LDFLAGS)
 
 GOALS = mpi-sort vanilla-sort  percentiles
 #vanilla-qsort
