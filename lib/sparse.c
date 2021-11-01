@@ -12,7 +12,7 @@
 #define CAT(a, b) _CAT(a, b)
 
 #define KEY_T CAT(CAT(uint, _KEYBITS_), _t)
-#define MPI_KEY CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
+#define MPI_KEY_T CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
 
 void lsort (
 	const int stable,
@@ -127,8 +127,8 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 
 	/* find key ranges */
 	{
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmin, 1, MPI_UINT64_T, MPI_MIN, comm));
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmax, 1, MPI_UINT64_T, MPI_MAX, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmin, 1, MPI_KEY_T, MPI_MIN, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmax, 1, MPI_KEY_T, MPI_MAX, comm));
 	}
 
 	ptrdiff_t recvstart_rank[rankcountp1];
@@ -159,7 +159,7 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 			const KEY_T newkey = MIN(krmax, curkey + delta);
 
 			KEY_T query[rankcount];
-			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_KEY, query, 1, MPI_KEY, comm));
+			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_KEY_T, query, 1, MPI_KEY_T, comm));
 
 			ptrdiff_t partials[rankcount];
 			for (int r = 0; r < rankcount; ++r)
@@ -176,7 +176,7 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 			}
 		}
 
-		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_KEY, global_startkey, 1, MPI_KEY, comm));
+		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_KEY_T, global_startkey, 1, MPI_KEY_T, comm));
 		MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count, 1, MPI_INT64_T, comm));
 
 		for (int r = 0; r < rankcount; ++r)
@@ -234,7 +234,7 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		assert(check == recvcount);
 
 		/* keys */
-		a2av(sendkeys, scount, sstart, MPI_KEY, recvkeys, rcount, rstart, comm);
+		a2av(sendkeys, scount, sstart, MPI_KEY_T, recvkeys, rcount, rstart, comm);
 
 		/* values */
 		if (sendvals)

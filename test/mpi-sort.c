@@ -180,7 +180,7 @@ int main (
 	for (int t = 0; t < NTIMES; ++t)
 	{
 		if (BYKEY_CHECK)
-			MPI_CHECK(MPI_Sort_bykey(keys, keys, rangec,
+			MPI_CHECK(MPI_Sort_bykey(keys, values, rangec,
 									 type, type,
 									 sortedkeys, sortedvalues, rangec, comm));
 		else

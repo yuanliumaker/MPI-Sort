@@ -18,7 +18,7 @@
 #define CAT(a, b) _CAT(a, b)
 typedef CAT(CAT(uint, _KEYBITS_), _t) KEY_T;
 
-#define MPI_KEY CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
+#define MPI_KEY_T CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
 
 void lsort (
 	const int stable,
@@ -128,8 +128,8 @@ void sparse_sort (
 
 	/* find key ranges */
 	{
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmin, 1, MPI_UINT64_T, MPI_MIN, comm));
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmax, 1, MPI_UINT64_T, MPI_MAX, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmin, 1, MPI_KEY_T, MPI_MIN, comm));
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmax, 1, MPI_KEY_T, MPI_MAX, comm));
 	}
 
 	ptrdiff_t recvstart_rank[rankcountp1];
@@ -160,7 +160,7 @@ void sparse_sort (
 			const KEY_T newkey = MIN(krmax, curkey + delta);
 
 			KEY_T query[rankcount];
-			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_KEY, query, 1, MPI_KEY, comm));
+			MPI_CHECK(MPI_Allgather(&newkey, 1, MPI_KEY_T, query, 1, MPI_KEY_T, comm));
 
 			ptrdiff_t partials[rankcount];
 			for (int r = 0; r < rankcount; ++r)
@@ -177,7 +177,7 @@ void sparse_sort (
 			}
 		}
 
-		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_KEY, global_startkey, 1, MPI_KEY, comm));
+		MPI_CHECK(MPI_Allgather(&curkey, 1, MPI_KEY_T, global_startkey, 1, MPI_KEY_T, comm));
 		MPI_CHECK(MPI_Allgather(&qcount, 1, MPI_INT64_T, global_count, 1, MPI_INT64_T, comm));
 
 		for (int r = 0; r < rankcount; ++r)
@@ -234,7 +234,7 @@ void sparse_sort (
 		const ptrdiff_t __attribute__((unused)) check = exscan(rankcount, rcount, rstart);
 		assert(check == recvcount);
 
-		a2av(sendkeys, scount, sstart, MPI_KEY, recvkeys, rcount, rstart, comm);
+		a2av(sendkeys, scount, sstart, MPI_KEY_T, recvkeys, rcount, rstart, comm);
 	}
 
 	/* sort once more */
@@ -316,7 +316,7 @@ int main (
 		POSIX_CHECK(keys = malloc(rangec * esz));
 
 		MPI_CHECK(MPI_File_read_at_all
-				  (f, load.start * esz, keys, rangec, MPI_KEY, MPI_STATUS_IGNORE));
+				  (f, load.start * esz, keys, rangec, MPI_KEY_T, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}
@@ -343,7 +343,7 @@ int main (
 		MPI_CHECK(MPI_File_set_size(f, ic * esz));
 
 		MPI_CHECK(MPI_File_write_at_all
-				  (f, load.start * esz, sortedkeys, rangec, MPI_KEY, MPI_STATUS_IGNORE));
+				  (f, load.start * esz, sortedkeys, rangec, MPI_KEY_T, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}
