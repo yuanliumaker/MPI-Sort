@@ -1,29 +1,26 @@
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <stdio.h>
 
 #include <assert.h>
 #include <string.h>
 
-#include <mpi.h>
-
-#include <mpi-util.h>
-#include <common-util.h>
-#include <posix-util.h>
-
+#include "macros.h"
 #include "a2av.h"
 
 #define _CAT(a, b) a ## b
 #define CAT(a, b) _CAT(a, b)
-typedef CAT(CAT(uint, _KEYBITS_), _t) KEY_T;
 
+#define KEY_T CAT(CAT(uint, _KEYBITS_), _t)
 #define MPI_KEY CAT(CAT(MPI_UINT, _KEYBITS_ ), _T)
 
-void lsortu(
-	const ptrdiff_t e,
-	const ptrdiff_t c,
-	void * k );
+void lsort (
+	const int stable,
+	const ptrdiff_t key_bytesize,
+	const ptrdiff_t value_bytesize,
+	const ptrdiff_t count,
+	void * keys,
+	void * values);
 
 static ptrdiff_t exscan (
 	const ptrdiff_t count,
@@ -102,25 +99,28 @@ static ptrdiff_t ub (
 	return first - head;
 }
 
-int VERBOSE = 0;
-
-void sparse_sort (
-	KEY_T * sendkeys,
-	const ptrdiff_t sendcount,
-	KEY_T * recvkeys,
-	const ptrdiff_t recvcount,
-	MPI_Comm comm )
+void CAT(sparse_u, _KEYBITS_) (
+		const int stable,
+		KEY_T * sendkeys,
+		void * sendvals,
+		const int sendcount,
+		MPI_Datatype valtype,
+		KEY_T * recvkeys,
+		void * recvvals,
+		const int recvcount,
+		MPI_Comm comm)
 {
-	READENV(VERBOSE, atoi);
-
 	int rank, rankcount;
 	MPI_CHECK(MPI_Comm_rank(comm, &rank));
 	MPI_CHECK(MPI_Comm_size(comm, &rankcount));
 
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
-	lsortu(sizeof(KEY_T), sendcount, sendkeys);
-	
+	int vsz;
+	MPI_CHECK(MPI_Type_size(valtype, &vsz));
+
+	lsort(stable, sizeof(KEY_T), vsz, sendcount, sendkeys, sendvals);
+
 	KEY_T krmin = sendkeys[0], krmax = sendkeys[sendcount - 1];
 
 	/* find key ranges */
@@ -231,127 +231,19 @@ void sparse_sort (
 		const ptrdiff_t __attribute__((unused)) check = exscan(rankcount, rcount, rstart);
 		assert(check == recvcount);
 
+		/* keys */
 		a2av(sendkeys, scount, sstart, MPI_KEY, recvkeys, rcount, rstart, comm);
+		
+		/* values */
+		if (recvvals)
+			a2av(sendvals, scount, sstart, valtype, recvvals, rcount, rstart, comm);
 	}
 
 	/* sort once more */
-	lsortu(sizeof(KEY_T), recvcount, recvkeys);
+	lsort(stable, vsz, sizeof(KEY_T), recvcount, recvkeys, recvvals);
 
 #ifndef NDEBUG
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
 		assert(recvkeys[i - 1] <= recvkeys[i]);
 #endif
-}
-
-int main (
-	const int argc,
-	const char * argv [])
-{
-	MPI_CHECK(MPI_Init((int *)&argc, (char ***)&argv));
-
-	MPI_Comm comm = MPI_COMM_WORLD;
-
-	int r, rc;
-	MPI_CHECK(MPI_Comm_rank(comm, &r));
-	MPI_CHECK(MPI_Comm_size(comm, &rc));
-
-	/* print MPI_TAG_UB */
-	{
-		int * v = NULL, flag = 0;
-		MPI_CHECK(MPI_Comm_get_attr(comm, MPI_TAG_UB, (void **)&v, &flag));
-
-		if (!r)
-			printf("MPI_TAG_UB: %d (flag: %d)\n", *v, flag);
-	}
-
-	if (3 != argc)
-	{
-		if (!r)
-			fprintf(stderr,
-					"usage: %s <path/to/in-uint%d.raw> <path/to/output.raw>\n",
-					argv[0], _KEYBITS_);
-
-		MPI_CHECK(MPI_Finalize());
-
-		return EXIT_FAILURE;
-	}
-
-	const ptrdiff_t esz = _KEYBITS_ / 8;
-
-	/* item count */
-	ptrdiff_t ic = 0;
-
-	/* count items */
-	{
-		MPI_File f;
-		MPI_CHECK(MPI_File_open(comm, (char *)argv[1],
-								MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
-
-		MPI_Offset fsz;
-		MPI_CHECK(MPI_File_get_size(f, &fsz));
-		assert(0 == fsz % esz);
-
-		ic = fsz / esz;
-	}
-
-	if (!r)
-		printf("processing %zd elements\n", ic);
-
-	workload_t load = divide_workload(r, rc, ic);
-
-	const ptrdiff_t rangec = load.count;
-
-	void * keys = NULL;
-
-	/* read keys */
-	{
-		MPI_File f = NULL;
-
-		MPI_CHECK(MPI_File_open
-				  (comm, argv[1], MPI_MODE_RDONLY, MPI_INFO_NULL, &f));
-
-		POSIX_CHECK(keys = malloc(rangec * esz));
-
-		MPI_CHECK(MPI_File_read_at_all
-				  (f, load.start * esz, keys, rangec, MPI_KEY, MPI_STATUS_IGNORE));
-
-		MPI_CHECK(MPI_File_close(&f));
-	}
-
-	double tbegin = MPI_Wtime();
-
-	void * sortedkeys = NULL;
-	POSIX_CHECK(sortedkeys = malloc(rangec * esz));
-
-	int NTIMES = 1;
-	READENV(NTIMES, atoi);
-
-	for (int t = 0; t < NTIMES; ++t)
-		sparse_sort(keys, load.count, sortedkeys, load.count, comm);
-
-	double tend = MPI_Wtime();
-
-	/* write to file */
-	{
-		MPI_File f;
-		MPI_CHECK(MPI_File_open
-				  (comm, argv[2], MPI_MODE_WRONLY | MPI_MODE_CREATE, MPI_INFO_NULL, &f));
-
-		MPI_CHECK(MPI_File_set_size(f, ic * esz));
-
-		MPI_CHECK(MPI_File_write_at_all
-				  (f, load.start * esz, sortedkeys, rangec, MPI_KEY, MPI_STATUS_IGNORE));
-
-		MPI_CHECK(MPI_File_close(&f));
-	}
-
-	free(keys);
-
-	MPI_CHECK(MPI_Finalize());
-
-	if (!r)
-		printf("%s: sorted %zd entries in %.3f ms. Bye.\n",
-			   argv[0], ic, (tend - tbegin) * 1e3);
-
-	return EXIT_SUCCESS;
 }

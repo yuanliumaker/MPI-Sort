@@ -15,7 +15,7 @@
 #include "static.h"
 
 #define CAT(x, y) x ## y
-#define NAME(x) CAT(dsort_, x)
+#define NAME(x) CAT(radix__, x)
 
 int NAME(KEY_T) (
 	const int stable,

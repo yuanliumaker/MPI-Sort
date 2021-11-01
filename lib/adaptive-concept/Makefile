@@ -1,3 +1,4 @@
+CFLAGS += -I../
 CFLAGS += -I../include -I../util
 
 CFLAGS += -std=c99

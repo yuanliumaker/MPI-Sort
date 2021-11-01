@@ -12,8 +12,11 @@
 #include "drange.h"
 #include "xtract.h"
 
-#define DECLARE(NAME, TYPE)						\
-	int NAME (									\
+#define _CAT(a, b) a ## b
+#define CAT(a, b) _CAT(a, b)
+
+#define RADIX_SIGNATURE(TYPE)					\
+	int CAT(radix_, TYPE) (						\
 		const int stable,						\
 		const TYPE * sendkeys,					\
 		const void * sendvals0,					\
@@ -25,24 +28,30 @@
 		void * recvvals0,						\
 		void * recvvals1,						\
 		const int recvcount,					\
-		MPI_Comm comm);
+		MPI_Comm comm)
 
-DECLARE(dsort_uint8_t, uint8_t);
-DECLARE(dsort_uint16_t, int16_t);
-DECLARE(dsort_uint32_t, int32_t);
+#define SPARSE_SIGNATURE(TYPE)					\
+	int CAT(sparse_, TYPE) (					\
+		const int stable,						\
+		TYPE * sendkeys,						\
+		void * sendvals,						\
+		const int sendcount,					\
+		MPI_Datatype valtype,					\
+		TYPE * recvkeys,						\
+		void * recvvals,						\
+		const int recvcount,					\
+		MPI_Comm comm)
 
-enum { DONTCARE_TYPE = -1 };
+RADIX_SIGNATURE(uint8_t);
+RADIX_SIGNATURE(uint16_t);
 
-static ptrdiff_t getsize(MPI_Datatype t)
-{
-	int s;
-	MPI_CHECK(MPI_Type_size(t, &s));
-	return s;
-}
+SPARSE_SIGNATURE(uint16_t);
+SPARSE_SIGNATURE(uint32_t);
+SPARSE_SIGNATURE(uint64_t);
 
 static int dispatch_unsigned (
-	const void * sendkeys,
-	const void * sendvals,
+	void * sendkeys,
+	void * sendvals,
 	const int sendcount,
 	MPI_Datatype keytype,
 	MPI_Datatype valtype,
@@ -55,7 +64,9 @@ static int dispatch_unsigned (
 
 	if (vinplace)
 	{
-		const ptrdiff_t footprint = getsize(valtype) * (ptrdiff_t)sendcount;
+		int vsz;
+		MPI_CHECK(MPI_Type_size(valtype, &vsz));
+		const ptrdiff_t footprint = vsz * (ptrdiff_t)sendcount;
 		sendvals = malloc(footprint);
 		memcpy((void *)sendvals, recvvals, footprint);
 	}
@@ -71,6 +82,7 @@ static int dispatch_unsigned (
 
 	drange_t range_new ;
 	const MPI_Datatype keytype_old = keytype;
+	/* range contraction at runtime */
 	if (MPI_SORT_DRANGE)
 	{
 		range_new = drange_contract(comm, keytype, sendcount, (void *)sendkeys);
@@ -80,112 +92,47 @@ static int dispatch_unsigned (
 
 	int err = MPI_ERR_TYPE;
 
-	/* there is no radix sort for 8 bits integers */
-	MPI_SORT_RADIX = MPI_SORT_RADIX * (MPI_UINT8_T != keytype);
+	/* we enforce radix sort for 8 bits keys */
+	MPI_SORT_RADIX |= (MPI_UINT8_T == keytype);
 
-	/* we discourage radix sort for 16 bits integers */
+	/* we discourage radix sort for 16 bits integers keys */
 	MPI_SORT_RADIX = MAX(0, MPI_SORT_RADIX - (MPI_UINT16_T == keytype));
 
-	/* we enforce radix sort for 64 bits integers */
-	MPI_SORT_RADIX |= (MPI_UINT64_T == keytype);
+	/* no radix sort for 32 and 64 bits keys */
+	MPI_SORT_RADIX *= (MPI_UINT32_T != keytype);
+	MPI_SORT_RADIX *= (MPI_UINT64_T != keytype);
 
 	if (!MPI_SORT_RADIX)
 	{
-		if (MPI_UINT8_T == keytype)
-			err = dsort_uint8_t (
-				MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
-				DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
 		if (MPI_UINT16_T == keytype)
-			err = dsort_uint16_t(
-				MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
-				DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
+			err = sparse_uint16_t (
+				MPI_SORT_STABLE, sendkeys, sendvals, sendcount,
+				valtype, recvkeys, recvvals, recvcount, comm);
 		else if (MPI_UINT32_T == keytype)
-			err = dsort_uint32_t(
-				MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
-				DONTCARE_TYPE, valtype, recvkeys, 0, recvvals, recvcount, comm);
+			err = sparse_uint32_t (
+				MPI_SORT_STABLE, sendkeys, sendvals, sendcount,
+				valtype, recvkeys, recvvals, recvcount, comm);
+		else if (MPI_UINT64_T == keytype)
+			err = sparse_uint64_t (
+				MPI_SORT_STABLE, sendkeys, sendvals, sendcount,
+				valtype, recvkeys, recvvals, recvcount, comm);
+		else
+			__builtin_trap();
 	}
 	else /* if RADIX */
 	{
-		ptrdiff_t vtsz = 0;
-
-		if (recvvals)
-			vtsz = getsize(valtype);
-
-		const ptrdiff_t ktsz = getsize(keytype);
-
-		/* TODO: intermediate results should be partitioned homogenously,
-		   ignoring sendcount and recvcount */
-		void * tmpk = malloc
-			((MPI_INT16_T == keytype ? sizeof(uint8_t) : sizeof(uint16_t))
-			 * MAX(recvcount, sendcount));
-
-		void * tmpv0 = malloc(ktsz * recvcount);
-		void * tmpv1 = recvvals ? malloc(vtsz * recvcount) : NULL;
-
-		if (MPI_UINT16_T == keytype)
+		if (MPI_UINT8_T == keytype)
+			err = radix_uint8_t (
+				MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
+				MPI_DATATYPE_NULL, valtype, recvkeys, 0, recvvals, recvcount, comm);
+		else if (MPI_UINT16_T == keytype)
 		{
-			xtract_8_16(0, sendcount, sendkeys, tmpk);
-
-			dsort_uint8_t(
-				MPI_SORT_STABLE, tmpk, sendkeys, sendvals, sendcount,
-				MPI_UINT16_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
-
-			xtract_8_16(1, recvcount, tmpv0, tmpk);
-
-			dsort_uint8_t(
-				1, tmpk, tmpv0, tmpv1, recvcount,
-				MPI_UINT16_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
-
-			err = MPI_SUCCESS;
+			err = radix_uint16_t(
+				MPI_SORT_STABLE, sendkeys, 0, sendvals, sendcount,
+				MPI_DATATYPE_NULL, valtype, recvkeys, 0, recvvals, recvcount, comm);
 		}
-		else if (MPI_UINT32_T == keytype)
-		{
-			xtract_16_32(0, sendcount, sendkeys, tmpk);
-
-			dsort_uint16_t(
-				MPI_SORT_STABLE, tmpk, sendkeys, sendvals, sendcount,
-				MPI_UINT32_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
-
-			xtract_16_32(1, recvcount, tmpv0, tmpk);
-
-			dsort_uint16_t(
-				1, tmpk, tmpv0, tmpv1, recvcount,
-				MPI_UINT32_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
-
-			err = MPI_SUCCESS;
-		}
-		else if (MPI_UINT64_T == keytype)
-		{
-			xtract_16_64(0, sendcount, sendkeys, tmpk);
-
-			dsort_uint16_t(
-				MPI_SORT_STABLE, tmpk, sendkeys, sendvals, sendcount,
-				MPI_UINT64_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
-
-			xtract_16_64(1, recvcount, tmpv0, tmpk);
-
-			dsort_uint16_t(
-				1, tmpk, tmpv0, tmpv1, recvcount,
-				MPI_UINT64_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
-
-			xtract_16_64(2, recvcount, recvkeys, tmpk);
-
-			dsort_uint16_t(
-				1, tmpk, recvkeys, recvvals, recvcount,
-				MPI_UINT64_T, valtype, 0, tmpv0, tmpv1, recvcount, comm);
-
-			xtract_16_64(3, recvcount, tmpv0, tmpk);
-
-			dsort_uint16_t(
-				1, tmpk, tmpv0, tmpv1, recvcount,
-				MPI_UINT64_T, valtype, 0, recvkeys, recvvals, recvcount, comm);
-		}
-
-		if (tmpv1)
-			free(tmpv1);
-
-		free(tmpv0);
-		free(tmpk);
+		else
+			__builtin_trap();
 	}
 
 	if (MPI_SORT_DRANGE)
@@ -204,8 +151,8 @@ static int dispatch_unsigned (
 
 __attribute__ ((visibility("default")))
 int MPI_Sort_bykey (
-	const void * sendkeys,
-	const void * sendvals,
+	void * sendkeys,
+	void * sendvals,
 	const int sendcount,
 	MPI_Datatype keytype,
 	MPI_Datatype valtype,
@@ -334,7 +281,7 @@ int MPI_Sort_bykey (
 
 __attribute__((visibility ("default")))
 int MPI_Sort (
-	const void * sendbuf,
+	void * sendbuf,
 	const int sendcount,
 	MPI_Datatype datatype,
 	void * recvbuf,
@@ -342,5 +289,5 @@ int MPI_Sort (
 	MPI_Comm comm)
 {
 	return
-		MPI_Sort_bykey(sendbuf, 0, sendcount, datatype, DONTCARE_TYPE, recvbuf, 0, recvcount, comm);
+		MPI_Sort_bykey(sendbuf, 0, sendcount, datatype, MPI_DATATYPE_NULL, recvbuf, 0, recvcount, comm);
 }

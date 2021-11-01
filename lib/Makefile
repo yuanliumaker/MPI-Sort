@@ -5,20 +5,20 @@ CFLAGS += -fvisibility=hidden -fPIC
 CFLAGS += -Wno-unused-variable
 CFLAGS += -Wno-unknown-pragmas
 
-tuned ?= 1
-
-ifeq "$(tuned)" "1"
-	CFLAGS += -D_TUNED_
-endif
+CXXFLAGS += -fvisibility=hidden -fPIC
+CXXFLAGS += -std=c++11
 
 OBJS = \
 	dispatch.o \
 	common.o \
 	drange.o \
 	xtract.o \
-	dsort-uint8.o \
-	dsort-uint16.o \
-	dsort-uint32.o \
+	radix-uint8.o \
+	radix-uint16.o \
+	sparse-uint16.o \
+	sparse-uint32.o \
+	sparse-uint64.o \
+	lsort.o \
 	a2av.o
 
 GOALS = libmpi-sort.a libmpi-sort.so
@@ -31,14 +31,23 @@ libmpi-sort.a : $(OBJS)
 libmpi-sort.so : $(OBJS)
 	$(CC) $(CFLAGS) -shared -o $@ $^
 
-dsort-uint8.o : dsort.c csort-tuned-u8.h
+radix-uint8.o : radix.c csort-tuned-u8.h
 	$(CC) $(CFLAGS) -D_TUNED_ -DKEY_T=uint8_t -D_BITCOUNT_=8 -o $@ -c $<
 
-dsort-uint16.o : dsort.c csort-tuned-u16.h
+radix-uint16.o : radix.c csort-tuned-u16.h
 	$(CC) $(CFLAGS) -D_TUNED_ -DKEY_T=uint16_t -D_BITCOUNT_=16 -o $@ -c $<
 
-dsort-uint32.o : dsort.c
-	$(CC) $(CFLAGS) -DKEY_T=uint32_t -o $@ -c $<
+sparse-uint16.o : sparse.c
+	$(CC) $(CFLAGS) -D_KEYBITS_=16 -o $@ -c $<
+
+sparse-uint32.o : sparse.c
+	$(CC) $(CFLAGS) -D_KEYBITS_=32 -o $@ -c $<
+
+sparse-uint64.o : sparse.c
+	$(CC) $(CFLAGS) -D_KEYBITS_=64 -o $@ -c $<
+
+lsort.o : lsort.cxx
+	$(CXX) $(CXXFLAGS) -c $<
 
 drange.c : drange.m4
 	m4 $< > $@
