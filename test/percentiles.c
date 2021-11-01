@@ -17,8 +17,8 @@ void printi16 (const void * const ptr) { printf("%hd", *(int16_t *)ptr); }
 void printu16 (const void * const ptr) { printf("%hu", *(uint16_t *)ptr); }
 void printi32 (const void * const ptr) { printf("%d", *(int32_t *)ptr); }
 void printu32 (const void * const ptr) { printf("%u", *(uint32_t *)ptr); }
-void printi64 (const void * const ptr) { printf("%lld", *(int64_t *)ptr); }
-void printu64 (const void * const ptr) { printf("%llu", *(uint64_t *)ptr); }
+void printi64 (const void * const ptr) { printf("%lld", *(long long int *)ptr); }
+void printu64 (const void * const ptr) { printf("%llu", *(long long unsigned int *)ptr); }
 void printf32 (const void * const ptr) { printf("%f", *(float *)ptr); }
 void printf64 (const void * const ptr) { printf("%lf", *(double *)ptr); }
 

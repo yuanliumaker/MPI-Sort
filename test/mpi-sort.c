@@ -46,7 +46,6 @@ int main (
 		return EXIT_FAILURE;
 	}
 
-
 	MPI_Datatype type = -1;
 	ptrdiff_t esz = -1;
 

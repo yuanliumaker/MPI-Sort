@@ -211,7 +211,7 @@ void lsort (
 	const int s,
 	//ksz : key size in bytes
 	const ptrdiff_t ksz,
-	//vsz : value size in bytes 
+	//vsz : value size in bytes
 	const ptrdiff_t vsz,
 	//cnt : item count of both k and v
 	const ptrdiff_t cnt,
@@ -255,7 +255,7 @@ void lsort (
 		break;
 
 	default:
-		fprintf(stderr,	"error in lsortu: unsupported element size (%d)\n",	ksz);
+		fprintf(stderr,	"error in lsort: unsupported key size (%zd)\n",	ksz);
 		exit(EXIT_FAILURE);
 	}
 }

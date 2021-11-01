@@ -1,12 +1,15 @@
 CFLAGS += -std=c99
 CFLAGS += -I../include
-CFLAGS += -fvisibility=hidden -fPIC
-
+CFLAGS += -fvisibility=hidden
+#CFLAGS += -fPIC
+CFLAGS += -g
 CFLAGS += -Wno-unused-variable
 CFLAGS += -Wno-unknown-pragmas
 
-CXXFLAGS += -fno-exceptions -fno-rtti -static
-CXXFLAGS += -fvisibility=hidden -fPIC
+#CXXFLAGS += -fno-exceptions -fno-rtti -static
+#CXXFLAGS += -fvisibility=hidden
+#CXXFLAGS += -fPIC
+#CXXFLAGS += -g
 
 OBJS = \
 	dispatch.o \
@@ -21,7 +24,7 @@ OBJS = \
 	lsort.o \
 	a2av.o
 
-GOALS = libmpi-sort.a libmpi-sort.so
+GOALS = libmpi-sort.a #libmpi-sort.so
 
 all : $(GOALS)
 

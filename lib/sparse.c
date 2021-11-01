@@ -116,8 +116,10 @@ void CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
-	int vsz;
-	MPI_CHECK(MPI_Type_size(valtype, &vsz));
+	int vsz = 0;
+
+	if (sendvals)
+		MPI_CHECK(MPI_Type_size(valtype, &vsz));
 
 	lsort(stable, sizeof(KEY_T), vsz, sendcount, sendkeys, sendvals);
 
@@ -235,12 +237,12 @@ void CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		a2av(sendkeys, scount, sstart, MPI_KEY, recvkeys, rcount, rstart, comm);
 		
 		/* values */
-		if (recvvals)
+		if (sendvals)
 			a2av(sendvals, scount, sstart, valtype, recvvals, rcount, rstart, comm);
 	}
 
 	/* sort once more */
-	lsort(stable, vsz, sizeof(KEY_T), recvcount, recvkeys, recvvals);
+	lsort(stable, sizeof(KEY_T), vsz, recvcount, recvkeys, recvvals);
 
 #ifndef NDEBUG
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
