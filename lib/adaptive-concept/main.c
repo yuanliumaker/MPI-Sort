@@ -123,7 +123,7 @@ void sparse_sort (
 	const ptrdiff_t rankcountp1 = rankcount + 1;
 
 	lsort(0, sizeof(KEY_T), 0, sendcount, sendkeys, NULL);
-	
+
 	KEY_T krmin = sendkeys[0], krmax = sendkeys[sendcount - 1];
 
 	/* find key ranges */

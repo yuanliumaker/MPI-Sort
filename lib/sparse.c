@@ -99,7 +99,7 @@ static ptrdiff_t ub (
 	return first - head;
 }
 
-void CAT(CAT(sparse_uint, _KEYBITS_), _t) (
+int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		const int stable,
 		KEY_T * sendkeys,
 		void * sendvals,
@@ -235,7 +235,7 @@ void CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 
 		/* keys */
 		a2av(sendkeys, scount, sstart, MPI_KEY, recvkeys, rcount, rstart, comm);
-		
+
 		/* values */
 		if (sendvals)
 			a2av(sendvals, scount, sstart, valtype, recvvals, rcount, rstart, comm);
@@ -248,4 +248,6 @@ void CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
 		assert(recvkeys[i - 1] <= recvkeys[i]);
 #endif
+
+	return MPI_SUCCESS;
 }

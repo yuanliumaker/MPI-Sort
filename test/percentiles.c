@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -48,7 +49,7 @@ int main (
 	}
 
 	ptrdiff_t esz = -1;
-	MPI_Datatype type = -1;
+	MPI_Datatype type = MPI_DATATYPE_NULL;
 	__typeof__(printu8) * printel = NULL;
 
 	if (!strcmp("int8", argv[1]))

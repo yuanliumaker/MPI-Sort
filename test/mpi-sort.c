@@ -46,7 +46,7 @@ int main (
 		return EXIT_FAILURE;
 	}
 
-	MPI_Datatype type = -1;
+	MPI_Datatype type = MPI_DATATYPE_NULL;
 	ptrdiff_t esz = -1;
 
 	if (!strcmp("int8", argv[1]))
@@ -142,7 +142,7 @@ int main (
 
 	const ptrdiff_t rangec = MAX(0, rangehi - rangelo);
 
-	void * keys = NULL;
+	void * keys = NULL, *sortedkeys = NULL;
 
 	/* read keys */
 	{
@@ -160,13 +160,17 @@ int main (
 		MPI_CHECK(MPI_File_close(&f));
 	}
 
-	void * values = NULL;
+	void * values = NULL, *sortedvalues = NULL;
 
 	if (BYKEY_CHECK)
 	{
 		values = malloc(rangec * esz);
 		memcpy(values, keys, rangec * esz);
+
+		sortedvalues = malloc(rangec * esz);
 	}
+
+	sortedkeys = malloc(rangec * esz);
 
 	double tbegin = MPI_Wtime();
 
@@ -176,17 +180,17 @@ int main (
 	for (int t = 0; t < NTIMES; ++t)
 	{
 		if (BYKEY_CHECK)
-			MPI_CHECK(MPI_Sort_bykey(MPI_IN_PLACE, keys, rangec,
+			MPI_CHECK(MPI_Sort_bykey(keys, keys, rangec,
 									 type, type,
-									 keys, values, rangec, comm));
+									 sortedkeys, sortedvalues, rangec, comm));
 		else
-			MPI_CHECK(MPI_Sort(MPI_IN_PLACE, rangec, type, keys, rangec, comm));
+			MPI_CHECK(MPI_Sort(keys, rangec, type, sortedkeys, rangec, comm));
 	}
 
 	double tend = MPI_Wtime();
 
 	if (BYKEY_CHECK)
-		if (memcmp(keys, values, rangec * esz))
+		if (memcmp(sortedkeys, sortedvalues, rangec * esz))
 			fprintf(stderr,
 					"ERROR: rank %d: keys do not match with values.\n",
 					r);
@@ -200,14 +204,18 @@ int main (
 		MPI_CHECK(MPI_File_set_size(f, ic * esz));
 
 		MPI_CHECK(MPI_File_write_at_all
-				  (f, rangelo * esz, keys, rangec, type, MPI_STATUS_IGNORE));
+				  (f, rangelo * esz, sortedkeys, rangec, type, MPI_STATUS_IGNORE));
 
 		MPI_CHECK(MPI_File_close(&f));
 	}
 
 	if (BYKEY_CHECK)
+	{
+		free(sortedvalues);
 		free(values);
+	}
 
+	free(sortedkeys);
 	free(keys);
 
 	MPI_CHECK(MPI_Finalize());

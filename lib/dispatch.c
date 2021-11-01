@@ -49,6 +49,26 @@ SPARSE_SIGNATURE(uint16_t);
 SPARSE_SIGNATURE(uint32_t);
 SPARSE_SIGNATURE(uint64_t);
 
+/* return copy of array */
+static void * mkcpy (
+	MPI_Datatype t,
+	const ptrdiff_t c,
+	const void * p )
+{
+	int tsz;
+	MPI_CHECK(MPI_Type_size(t, &tsz));
+
+	/* byte count */
+	const ptrdiff_t bc = tsz * c;
+
+	void * retval = NULL;
+	DIE_UNLESS(retval = malloc(bc));
+
+	memcpy(retval, p, bc);
+
+	return retval;
+}
+
 static int dispatch_unsigned (
 	void * sendkeys,
 	void * sendvals,
@@ -60,16 +80,14 @@ static int dispatch_unsigned (
 	const int recvcount,
 	MPI_Comm comm)
 {
+	const int kinplace = MPI_IN_PLACE == sendkeys;
 	const int vinplace = MPI_IN_PLACE == sendvals;
 
+	if (kinplace)
+		sendkeys = mkcpy(keytype, sendcount, recvkeys);
+
 	if (vinplace)
-	{
-		int vsz;
-		MPI_CHECK(MPI_Type_size(valtype, &vsz));
-		const ptrdiff_t footprint = vsz * (ptrdiff_t)sendcount;
-		sendvals = malloc(footprint);
-		memcpy((void *)sendvals, recvvals, footprint);
-	}
+		sendvals = mkcpy(valtype, sendcount, recvvals);
 
 	int MPI_SORT_RADIX = 1;
 	READENV(MPI_SORT_RADIX, atoi);
@@ -145,6 +163,9 @@ static int dispatch_unsigned (
 
 	if (vinplace)
 		free((void *)sendvals);
+
+	if (kinplace)
+		free((void *)sendkeys);
 
 	return err;
 }
