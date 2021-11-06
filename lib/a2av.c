@@ -19,6 +19,13 @@ static uint16_t hash16 (const uint64_t data)
 	return t0 ^ t1 ^ t2 ^ t3;
 }
 
+static float MPI_SORT_A2AV_TUNE = 0.95;
+
+static void __attribute__((constructor)) init ()
+{
+	READENV(MPI_SORT_A2AV_TUNE, atof);
+}
+
 void a2av (
 	const void * in,
 	const ptrdiff_t * sendcounts,
@@ -38,13 +45,14 @@ void a2av (
 	/* compute msglen_homo:
 	   average 95-percentiles of the message sizes first */
 	{
-		ptrdiff_t s[rc];
-		memcpy(s, sendcounts, sizeof(s));
+		ptrdiff_t s[2 * rc];
+		memcpy(s, sendcounts, sizeof(ptrdiff_t) * rc);
+		memcpy(s + rc, recvcounts, sizeof(ptrdiff_t) * rc);
 
 		__extension__ int compar(const void * a, const void * b) { return *(ptrdiff_t *)a - *(ptrdiff_t *)b; }
-		qsort(s, rc, sizeof(ptrdiff_t), compar);
+		qsort(s, 2 * rc, sizeof(ptrdiff_t), compar);
 
-		msglen_homo = s[MAX(0, MIN(rc - 1, (int)round(0.95 * rc)))];
+		msglen_homo = s[MAX(0, MIN(2 * rc - 1, (int)round(MPI_SORT_A2AV_TUNE * rc)))];
 
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_SUM, comm));
 		msglen_homo /= rc;
