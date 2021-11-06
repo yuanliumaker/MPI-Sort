@@ -80,13 +80,13 @@ static int dispatch_unsigned (
 	const int recvcount,
 	MPI_Comm comm)
 {
-	const int kinplace = MPI_IN_PLACE == sendkeys;
-	const int vinplace = MPI_IN_PLACE == sendvals;
+	const int kinplace = recvkeys == sendkeys;
+	const int vinplace = recvvals == sendvals;
 
 	if (kinplace)
 		sendkeys = mkcpy(keytype, sendcount, recvkeys);
 
-	if (vinplace)
+	if (recvvals && vinplace)
 		sendvals = mkcpy(valtype, sendcount, recvvals);
 
 	int MPI_SORT_RADIX = 1;
