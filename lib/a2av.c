@@ -20,10 +20,13 @@ static uint16_t hash16 (const uint64_t data)
 }
 
 static float MPI_SORT_A2AV_TUNE = 0.95;
+static ptrdiff_t MPI_SORT_A2AV_SIZE = 128;
+
 
 static void __attribute__((constructor)) init ()
 {
 	READENV(MPI_SORT_A2AV_TUNE, atof);
+	READENV(MPI_SORT_A2AV_SIZE, atoi);
 }
 
 void a2av (
@@ -69,7 +72,7 @@ void a2av (
 
 	/* send around keys via A2A */
 	{
-		const ptrdiff_t maxcount = MAX(1, 128 / esz);
+		const ptrdiff_t maxcount = MAX(1, MPI_SORT_A2AV_SIZE / esz);
 
 		void *sendbuf, *recvbuf;
 		DIE_UNLESS(sendbuf = malloc(esz * maxcount * rc));
