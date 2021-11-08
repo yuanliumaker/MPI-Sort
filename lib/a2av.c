@@ -39,6 +39,8 @@ void a2av (
 	const ptrdiff_t * rdispls,
 	MPI_Comm comm )
 {
+	const double t0 = MPI_Wtime();
+
 	int r, rc;
 	MPI_CHECK(MPI_Comm_rank(comm, &r));
 	MPI_CHECK(MPI_Comm_size(comm, &rc));
@@ -46,7 +48,9 @@ void a2av (
 	ptrdiff_t msglen_homo;
 
 	/* compute msglen_homo:
-	   average 95-percentiles of the message sizes first */
+	   max 95-percentiles of the message sizes first
+	   TODO: refine balance between A2A and P2P,
+	   it makes sense to spend few milliseconds for that */
 	{
 		ptrdiff_t s[2 * rc];
 		memcpy(s, sendcounts, sizeof(ptrdiff_t) * rc);
@@ -55,11 +59,12 @@ void a2av (
 		__extension__ int compar(const void * a, const void * b) { return *(ptrdiff_t *)a - *(ptrdiff_t *)b; }
 		qsort(s, 2 * rc, sizeof(ptrdiff_t), compar);
 
-		msglen_homo = s[MAX(0, MIN(2 * rc - 1, (int)round(MPI_SORT_A2AV_TUNE * rc)))];
+		msglen_homo = s[MAX(0, MIN(2 * rc - 1, (int)round(MPI_SORT_A2AV_TUNE * 2 * rc)))];
 
-		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_SUM, comm));
-		msglen_homo /= rc;
+		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_MAX, comm));
 	}
+
+	const double t1 = MPI_Wtime();
 
 	/* element size */
 	ptrdiff_t esz;
@@ -104,10 +109,12 @@ void a2av (
 		free(sendbuf);
 	}
 
+	const double t2 = MPI_Wtime();
+
 	/* recv/send the remaining keys via P2P */
 	{
 		int reqc = 0;
-		MPI_Request reqs[rc];
+		MPI_Request reqs[2 * rc];
 
 		for (int rr = 0; rr < rc; ++rr)
 		{
@@ -123,11 +130,44 @@ void a2av (
 			const ptrdiff_t rem = sendcounts[rr] - msglen_homo;
 
 			if (rem > 0)
-				MPI_CHECK(MPI_Send(esz * (sdispls[rr] + msglen_homo) + (int8_t *)in,
-								   rem, type, rr, hash16(r + (ptrdiff_t)rc * rr), comm));
+				MPI_CHECK(MPI_Isend(esz * (sdispls[rr] + msglen_homo) + (int8_t *)in,
+									rem, type, rr, hash16(r + (ptrdiff_t)rc * rr), comm, reqs + reqc++));
 		}
 
 		/* wait now for receiving all messages */
 		MPI_CHECK(MPI_Waitall(reqc, reqs, MPI_STATUSES_IGNORE));
+	}
+
+	const double t3 = MPI_Wtime();
+
+	{
+		int MPI_SORT_PROFILE = 0;
+		READENV(MPI_SORT_PROFILE, atoi);
+
+		if (MPI_SORT_PROFILE)
+		{
+			__extension__ double tts_ms (
+				double tbegin,
+				double tend )
+			{
+				MPI_CHECK(MPI_Reduce(r ? &tbegin : MPI_IN_PLACE, &tbegin, 1, MPI_DOUBLE, MPI_MIN, 0, comm));
+				MPI_CHECK(MPI_Reduce(r ? &tend : MPI_IN_PLACE, &tend, 1, MPI_DOUBLE, MPI_MAX, 0, comm));
+
+				return tend - tbegin;
+			}
+
+			const double thomo = tts_ms(t0, t1);
+			const double ta2a = tts_ms(t1, t2);
+			const double tp2p = tts_ms(t2, t3);
+			const double ttotal = tts_ms(t0, t3);
+
+			if (!r)
+			{
+				printf("%s: msglen_homo %zd\n", __FILE__, msglen_homo);
+
+				printf("%s: HOMO %g s A2A %g s P2P %g s (OVERALL %g s)\n",
+					   __FILE__, thomo, ta2a, tp2p, ttotal);
+			}
+		}
 	}
 }

@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <assert.h>
 #include <string.h>
@@ -100,16 +101,18 @@ static ptrdiff_t ub (
 }
 
 int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
-		const int stable,
-		KEY_T * sendkeys,
-		void * sendvals,
-		const int sendcount,
-		MPI_Datatype valtype,
-		KEY_T * recvkeys,
-		void * recvvals,
-		const int recvcount,
-		MPI_Comm comm)
+	const int stable,
+	KEY_T * sendkeys,
+	void * sendvals,
+	const int sendcount,
+	MPI_Datatype valtype,
+	KEY_T * recvkeys,
+	void * recvvals,
+	const int recvcount,
+	MPI_Comm comm)
 {
+	const double t0 = MPI_Wtime();
+
 	int rank, rankcount;
 	MPI_CHECK(MPI_Comm_rank(comm, &rank));
 	MPI_CHECK(MPI_Comm_size(comm, &rankcount));
@@ -121,7 +124,11 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 	if (sendvals)
 		MPI_CHECK(MPI_Type_size(valtype, &vsz));
 
+	const double t1 = MPI_Wtime();
+
 	lsort(stable, sizeof(KEY_T), vsz, sendcount, sendkeys, sendvals);
+
+	const double t2 = MPI_Wtime();
 
 	KEY_T krmin = sendkeys[0], krmax = sendkeys[sendcount - 1];
 
@@ -131,9 +138,11 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &krmax, 1, MPI_KEY_T, MPI_MAX, comm));
 	}
 
+	const double t3 = MPI_Wtime();
+
 	ptrdiff_t recvstart_rank[rankcountp1];
 
-	/* compute recvstart_rank */
+	/* separators are defined by recvcounts */
 	{
 		ptrdiff_t tmp = recvcount, myend = 0;
 		MPI_CHECK(MPI_Scan(&tmp, &myend, 1, MPI_INT64_T, MPI_SUM, comm));
@@ -142,10 +151,12 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		MPI_CHECK(MPI_Allgather(&myend, 1, MPI_INT64_T, recvstart_rank + 1, 1, MPI_INT64_T, comm));
 	}
 
+	const double t4 = MPI_Wtime();
+
 	KEY_T global_startkey[rankcount];
 	ptrdiff_t global_count[rankcount];
 
-	/* find approximate splitters location */
+	/* find approximately separators by exploring the key space */
 	{
 		size_t curkey = krmin, qcount = 0;
 
@@ -183,9 +194,11 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 			assert(global_count[r] <= recvstart_rank[r]);
 	}
 
+	const double t5 = MPI_Wtime();
+
 	ptrdiff_t sstart[rankcountp1];
 
-	/* compute sstart */
+	/* refine separator in index space */
 	{
 		sstart[0] = 0;
 
@@ -210,6 +223,8 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 			if (global_count[r] != recvstart_rank[r])
 				sstart[r] += MAX(0, MIN(q[r], recvstart_rank[r] - global_count[r] - qstart[r]));
 	}
+
+	const double t6 = MPI_Wtime();
 
 #ifndef NDEBUG
 	ptrdiff_t check[rankcountp1];
@@ -241,13 +256,51 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 			a2av(sendvals, scount, sstart, valtype, recvvals, rcount, rstart, comm);
 	}
 
+	const double t7 = MPI_Wtime();
+
 	/* sort once more */
 	lsort(stable, sizeof(KEY_T), vsz, recvcount, recvkeys, recvvals);
+
+	const double t8 = MPI_Wtime();
 
 #ifndef NDEBUG
 	for(ptrdiff_t i = 1; i < recvcount; ++i)
 		assert(recvkeys[i - 1] <= recvkeys[i]);
 #endif
+
+	{
+		int MPI_SORT_PROFILE = 0;
+		READENV(MPI_SORT_PROFILE, atoi);
+
+		if (MPI_SORT_PROFILE)
+		{
+			__extension__ double tts_ms (
+				double tbegin,
+				double tend )
+			{
+				MPI_CHECK(MPI_Reduce(rank ? &tbegin : MPI_IN_PLACE, &tbegin, 1, MPI_DOUBLE, MPI_MIN, 0, comm));
+				MPI_CHECK(MPI_Reduce(rank ? &tend : MPI_IN_PLACE, &tend, 1, MPI_DOUBLE, MPI_MAX, 0, comm));
+
+				return tend - tbegin;
+			}
+
+			const double tinit = tts_ms(t0, t1);
+			const double tlocal = tts_ms(t1, t2);
+			const double trange = tts_ms(t2, t3);
+			const double tsep = tts_ms(t3, t4);
+			const double tquery = tts_ms(t4, t5);
+			const double trefine = tts_ms(t5, t6);
+			const double ta2a = tts_ms(t6, t7);
+			const double tlocal2 = tts_ms(t7, t8);
+			const double ttotal = tts_ms(t0, t8);
+
+			if (!rank)
+			{
+				printf("%s: INIT %g s LOCALSORT %g s RANGE %g s SEPARATORS %g s QUERIES %g s REFINE %g s A2AV %g s LOCALSORT2 %g s (OVERALL %g s)\n",
+					   __FILE__, tinit, tlocal, trange, tsep, tquery, trefine, ta2a, tlocal2, ttotal);
+			}
+		}
+	}
 
 	return MPI_SUCCESS;
 }

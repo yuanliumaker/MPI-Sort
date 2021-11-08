@@ -182,10 +182,9 @@ static void sort_bykey (
 	K * k,
 	void * v )
 {
-	/* why signed integers? we want to trigger gatherdd
-	   this is based on a speculation of mine,
-	   that finally gatherdd is finally faster than scalar loads on
-	   microarchs in 2020+ */
+	/* why signed integers? i want to trigger gatherdd.
+	   here i am speculating that gatherdd is finally faster
+	   than scalar loads on microarchs in 2020+ */
 
 	if ((ptrdiff_t)std::numeric_limits<int32_t>::max() >= c)
 		sort_bykey_t(s, vsz, (int32_t)c, k, v);
