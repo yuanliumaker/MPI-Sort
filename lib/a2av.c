@@ -20,13 +20,13 @@ static uint16_t hash16 (const uint64_t data)
 }
 
 static float MPI_SORT_A2AV_TUNE = 0.95;
-static ptrdiff_t MPI_SORT_A2AV_SIZE = 128;
-
+static ptrdiff_t MPI_SORT_A2AV_SIZE = 128, MPI_SORT_A2AV_HOMO = -1;
 
 static void __attribute__((constructor)) init ()
 {
 	READENV(MPI_SORT_A2AV_TUNE, atof);
-	READENV(MPI_SORT_A2AV_SIZE, atoi);
+	READENV(MPI_SORT_A2AV_SIZE, atoll);
+	READENV(MPI_SORT_A2AV_HOMO, atoll);
 }
 
 void a2av (
@@ -45,12 +45,13 @@ void a2av (
 	MPI_CHECK(MPI_Comm_rank(comm, &r));
 	MPI_CHECK(MPI_Comm_size(comm, &rc));
 
-	ptrdiff_t msglen_homo;
+	ptrdiff_t msglen_homo = MPI_SORT_A2AV_HOMO;
 
 	/* compute msglen_homo:
 	   max 95-percentiles of the message sizes first
 	   TODO: refine balance between A2A and P2P,
 	   it makes sense to spend few milliseconds for that */
+	if (msglen_homo < 0)
 	{
 		ptrdiff_t s[2 * rc];
 		memcpy(s, sendcounts, sizeof(ptrdiff_t) * rc);
