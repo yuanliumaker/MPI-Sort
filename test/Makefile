@@ -4,6 +4,12 @@ CFLAGS += -std=c99
 CXXFLAGS += -std=c++11
 
 LDFLAGS += -L../lib
+
+threads ?= 0
+ifeq ($(threads),1)
+	LDFLAGS := -fopenmp $(LDFLAGS)
+endif
+
 LDFLAGS := -l:libmpi-sort.a -lstdc++ -lm $(LDFLAGS)
 
 GOALS = mpi-sort vanilla-sort  percentiles

@@ -9,6 +9,15 @@
 
 #include <stdint.h>
 
+#include "macros.h"
+
+static int MPI_SORT_ENABLE_THREADS = 0;
+
+static void __attribute__((constructor)) init ()
+{
+	READENV(MPI_SORT_ENABLE_THREADS, atoi);
+}
+
 template < typename C, typename I, typename V >
 static void gather (
 	const C count,
@@ -70,10 +79,22 @@ static void sort_kv_indirect (
 	for (C i = 0; i < c; ++i)
 		t[i] = std::make_pair(k[i], i);
 
-	if (s)
-		std::stable_sort(t, t + c);
+	if (MPI_SORT_ENABLE_THREADS)
+	{
+#ifdef _GLIBCXX_PARALLEL
+		if (s)
+			__gnu_parallel::stable_sort(t, t + c);
+		else
+			__gnu_parallel::sort(t, t + c);
+#endif
+	}
 	else
-		std::sort(t, t + c);
+	{
+		if (s)
+			std::stable_sort(t, t + c);
+		else
+			std::sort(t, t + c);
+	}
 
 	void * v2 = malloc(vsz * c);
 	memcpy(v2, v, vsz * c);
@@ -115,10 +136,22 @@ static void sort_kv_direct (
 	for (C i = 0; i < c; ++i)
 		t[i] = std::make_pair(k[i], v[i]);
 
-	if (s)
-		std::stable_sort(t, t + c);
+	if (MPI_SORT_ENABLE_THREADS)
+	{
+#ifdef _GLIBCXX_PARALLEL
+		if (s)
+			__gnu_parallel::stable_sort(t, t + c);
+		else
+			__gnu_parallel::sort(t, t + c);
+#endif
+	}
 	else
-		std::sort(t, t + c);
+	{
+		if (s)
+			std::stable_sort(t, t + c);
+		else
+			std::sort(t, t + c);
+	}
 
 	enum { BUNCH = 1 << 12 };
 
@@ -198,10 +231,22 @@ static void sort (
 	const ptrdiff_t c,
 	T * k )
 {
-	if (s)
-		std::stable_sort(k, k + c);
+	if (MPI_SORT_ENABLE_THREADS)
+	{
+#ifdef _GLIBCXX_PARALLEL
+		if (s)
+			__gnu_parallel::stable_sort(k, k + c);
+		else
+			__gnu_parallel::sort(k, k + c);
+#endif
+	}
 	else
-		std::sort(k, k + c);
+	{
+		if (s)
+			std::stable_sort(k, k + c);
+		else
+			std::sort(k, k + c);
+	}
 }
 
 extern "C"

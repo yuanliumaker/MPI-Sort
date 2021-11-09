@@ -10,6 +10,13 @@ CXXFLAGS += -fno-exceptions -fno-rtti -static
 CXXFLAGS += -fvisibility=hidden
 CXXFLAGS += -fPIC
 
+threads ?= 0
+
+ifeq ($(threads),1)
+	CXXFLAGS += -D_GLIBCXX_PARALLEL
+	CXXFLAGS += -fopenmp
+endif
+
 OBJS = \
 	dispatch.o \
 	common.o \
