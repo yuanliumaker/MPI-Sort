@@ -3,8 +3,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
+#include <errno.h>
 
-#include <posix-util.h>
+#define TOSTR_(a) #a
+#define MKSTR(a) TOSTR_(a)
+
+#define POSIX_CHECK(stmt)							\
+	do												\
+	{												\
+		if (!(stmt))								\
+		{											\
+			perror(#stmt  " in "					\
+				   __FILE__ ":" MKSTR(__LINE__) );	\
+													\
+			exit(EXIT_FAILURE);						\
+		}											\
+	}												\
+	while(0)
+
+#include <sys/time.h>
+
+double rdtss()
+{
+	struct timeval tv;
+	POSIX_CHECK(0 == gettimeofday(&tv, NULL));
+
+	return tv.tv_sec + 1e-6 * tv.tv_usec;
+}
 
 int compar (
     const void * element1,

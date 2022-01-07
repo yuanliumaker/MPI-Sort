@@ -5,6 +5,7 @@
 
 #include <limits>
 #include <algorithm>
+#include <parallel/algorithm>
 #include <utility>
 
 #include <stdint.h>
@@ -81,12 +82,10 @@ static void sort_kv_indirect (
 
 	if (MPI_SORT_ENABLE_THREADS)
 	{
-#ifdef _GLIBCXX_PARALLEL
 		if (s)
 			__gnu_parallel::stable_sort(t, t + c);
 		else
 			__gnu_parallel::sort(t, t + c);
-#endif
 	}
 	else
 	{
@@ -138,12 +137,10 @@ static void sort_kv_direct (
 
 	if (MPI_SORT_ENABLE_THREADS)
 	{
-#ifdef _GLIBCXX_PARALLEL
 		if (s)
 			__gnu_parallel::stable_sort(t, t + c);
 		else
 			__gnu_parallel::sort(t, t + c);
-#endif
 	}
 	else
 	{
@@ -233,12 +230,10 @@ static void sort (
 {
 	if (MPI_SORT_ENABLE_THREADS)
 	{
-#ifdef _GLIBCXX_PARALLEL
 		if (s)
 			__gnu_parallel::stable_sort(k, k + c);
 		else
 			__gnu_parallel::sort(k, k + c);
-#endif
 	}
 	else
 	{
