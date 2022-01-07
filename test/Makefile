@@ -12,8 +12,8 @@ endif
 
 LDFLAGS := -l:libmpi-sort.a -lstdc++ -lm $(LDFLAGS)
 
-GOALS = mpi-sort vanilla-sort  percentiles
-#vanilla-qsort
+GOALS = mpi-sort vanilla-sort vanilla-qsort percentiles cpd
+
 all : $(GOALS)
 
 vanilla-sort : vanilla-sort.cxx
