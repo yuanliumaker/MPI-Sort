@@ -3,25 +3,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
-#include <errno.h>
-
-#define TOSTR_(a) #a
-#define MKSTR(a) TOSTR_(a)
-
-#define POSIX_CHECK(stmt)							\
-	do												\
-	{												\
-		if (!(stmt))								\
-		{											\
-			perror(#stmt  " in "					\
-				   __FILE__ ":" MKSTR(__LINE__) );	\
-													\
-			exit(EXIT_FAILURE);						\
-		}											\
-	}												\
-	while(0)
 
 #include <sys/time.h>
+
+#include <mpi.h>
+#include "util.h"
 
 double rdtss()
 {

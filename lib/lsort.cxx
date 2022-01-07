@@ -5,7 +5,11 @@
 
 #include <limits>
 #include <algorithm>
+
+#ifdef _ENABLE_THREADS_
 #include <parallel/algorithm>
+#endif
+
 #include <utility>
 
 #include <stdint.h>
@@ -80,6 +84,7 @@ static void sort_kv_indirect (
 	for (C i = 0; i < c; ++i)
 		t[i] = std::make_pair(k[i], i);
 
+#ifdef _ENABLE_THREADS_
 	if (MPI_SORT_ENABLE_THREADS)
 	{
 		if (s)
@@ -88,6 +93,7 @@ static void sort_kv_indirect (
 			__gnu_parallel::sort(t, t + c);
 	}
 	else
+#endif
 	{
 		if (s)
 			std::stable_sort(t, t + c);
@@ -135,6 +141,7 @@ static void sort_kv_direct (
 	for (C i = 0; i < c; ++i)
 		t[i] = std::make_pair(k[i], v[i]);
 
+#ifdef _ENABLE_THREADS_
 	if (MPI_SORT_ENABLE_THREADS)
 	{
 		if (s)
@@ -143,6 +150,7 @@ static void sort_kv_direct (
 			__gnu_parallel::sort(t, t + c);
 	}
 	else
+#endif
 	{
 		if (s)
 			std::stable_sort(t, t + c);
@@ -228,6 +236,7 @@ static void sort (
 	const ptrdiff_t c,
 	T * k )
 {
+#ifdef _ENABLE_THREADS_
 	if (MPI_SORT_ENABLE_THREADS)
 	{
 		if (s)
@@ -236,6 +245,7 @@ static void sort (
 			__gnu_parallel::sort(k, k + c);
 	}
 	else
+#endif
 	{
 		if (s)
 			std::stable_sort(k, k + c);

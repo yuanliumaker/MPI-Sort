@@ -13,7 +13,7 @@ CXXFLAGS += -fPIC
 threads ?= 0
 
 ifeq ($(threads),1)
-	#if icc: CXXFLAGS += -D_GLIBCXX_PARALLEL
+	CXXFLAGS += -D_ENABLE_THREADS_
 	CXXFLAGS += -fopenmp
 endif
 
