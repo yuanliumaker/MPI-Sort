@@ -104,32 +104,37 @@ void a2av (
 
 	/* send around keys via A2A */
 	{
-		const ptrdiff_t maxcount = MAX(1, MPI_SORT_A2AV_SIZE / esz);
+		const ptrdiff_t msgsz = MAX(1, MPI_SORT_A2AV_SIZE);
 
 		void *sendbuf, *recvbuf;
-		DIE_UNLESS(sendbuf = malloc(esz * maxcount * rc));
-		DIE_UNLESS(recvbuf = malloc(esz * maxcount * rc));
+		DIE_UNLESS(sendbuf = malloc(msgsz * rc));
+		DIE_UNLESS(recvbuf = malloc(msgsz * rc));
 
-		for (ptrdiff_t base = 0; base < msglen_homo; base += maxcount)
+		/* byte count per rank */
+		const ptrdiff_t basehi = esz * msglen_homo;
+
+		for (ptrdiff_t base = 0; base < basehi; base += msgsz)
 		{
-			const ptrdiff_t n = MIN(maxcount, msglen_homo - base);
+			/* last message is likely to be truncated */
+			const ptrdiff_t msgsz_trunc = MIN(msgsz, basehi - base);
 
 			/* pack sendbuf */
 			for (int rr = 0; rr < rc; ++rr)
-				if (base < sendcounts[rr])
-					memcpy(esz * n * rr + (int8_t *)sendbuf,
-						   esz * (base + sdispls[rr]) + (int8_t *)in,
-						   esz * MIN(n, sendcounts[rr] - base));
+				if (base < esz * sendcounts[rr])
+					memcpy(msgsz_trunc * rr + (int8_t *)sendbuf,
+						   base + esz * sdispls[rr] + (int8_t *)in,
+						   MIN(msgsz_trunc, esz * sendcounts[rr] - base));
 
-			/* relaxing irregularities -- sending around some invalid entries */
-			MPI_CHECK(MPI_Alltoall(sendbuf, n, type, recvbuf, n, type, comm));
+			/* relaxing irregularities via A2A */
+			MPI_CHECK(MPI_Alltoall(sendbuf, msgsz_trunc, MPI_BYTE,
+								   recvbuf, msgsz_trunc, MPI_BYTE, comm));
 
 			/* unpack recvbuf */
 			for (ptrdiff_t rr = 0; rr < rc; ++rr)
-				if (base < recvcounts[rr])
-					memcpy(esz * (base + rdispls[rr]) + (int8_t *)out,
-						   esz * n * rr + (int8_t *)recvbuf,
-						   esz * MIN(n, recvcounts[rr] - base));
+				if (base < esz * recvcounts[rr])
+					memcpy(base + esz * rdispls[rr] + (int8_t *)out,
+						   msgsz_trunc * rr + (int8_t *)recvbuf,
+						   MIN(msgsz_trunc, esz * recvcounts[rr] - base));
 		}
 
 		free(recvbuf);
