@@ -299,6 +299,23 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 				printf("%s: INIT %g s LOCALSORT %g s RANGE %g s SEPARATORS %g s QUERIES %g s REFINE %g s A2AV %g s LOCALSORT2 %g s (OVERALL %g s)\n",
 					   __FILE__, tinit, tlocal, trange, tsep, tquery, trefine, ta2a, tlocal2, ttotal);
 			}
+
+			if (2 == MPI_SORT_PROFILE)
+			{
+				/* gather and print the local timings too */
+				double * tlocals = NULL;
+
+				if (!rank)
+					DIE_UNLESS(tlocals = malloc(sizeof(*tlocals) * rankcount));
+
+				MPI_CHECK(MPI_Gather(&tlocal, 1, MPI_DOUBLE, tlocals, 1, MPI_DOUBLE, 0, comm));
+
+				for (int rr = 0; rr < rankcount; ++rr)
+					printf("LOCALSORT rank %d took %g s\n", rr, tlocals[rr]);
+
+				if (tlocals)
+					free(tlocals);
+			}
 		}
 	}
 
