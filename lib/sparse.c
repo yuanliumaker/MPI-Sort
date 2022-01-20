@@ -310,11 +310,13 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 
 				MPI_CHECK(MPI_Gather(&tlocal, 1, MPI_DOUBLE, tlocals, 1, MPI_DOUBLE, 0, comm));
 
-				for (int rr = 0; rr < rankcount; ++rr)
-					printf("LOCALSORT rank %d took %g s\n", rr, tlocals[rr]);
+				if (!rank)
+				{
+					for (int rr = 0; rr < rankcount; ++rr)
+						printf("LOCALSORT rank %d took %g s\n", rr, tlocals[rr]);
 
-				if (tlocals)
 					free(tlocals);
+				}
 			}
 		}
 	}
