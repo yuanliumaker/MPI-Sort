@@ -21,12 +21,14 @@ static uint16_t hash16 (const uint64_t data)
 
 static float MPI_SORT_A2AV_TUNE = 0.95;
 static ptrdiff_t MPI_SORT_A2AV_SIZE = 128, MPI_SORT_A2AV_HOMO = -1;
+static int MPI_SORT_P2P_OVERLAP = 1;
 
 static void __attribute__((constructor)) init ()
 {
 	READENV(MPI_SORT_A2AV_TUNE, atof);
 	READENV(MPI_SORT_A2AV_SIZE, atoll);
 	READENV(MPI_SORT_A2AV_HOMO, atoll);
+	READENV(MPI_SORT_P2P_OVERLAP, atoi);
 }
 
 void a2av (
@@ -80,6 +82,7 @@ void a2av (
 	MPI_Request reqs[2 * rc];
 
 	/* P2P reqs */
+	__extension__ void post_recv()
 	{
 		for (int rr = 0; rr < rc; ++rr)
 		{
@@ -99,6 +102,9 @@ void a2av (
 								   rem, type, rr, hash16(r + (ptrdiff_t)rc * rr), comm));
 		}
 	}
+
+	if (MPI_SORT_P2P_OVERLAP)
+		post_recv();
 
 	const double t2 = MPI_Wtime();
 
@@ -143,6 +149,9 @@ void a2av (
 
 	const double t3 = MPI_Wtime();
 
+	if (!MPI_SORT_P2P_OVERLAP)
+		post_recv();
+
 	/* recv/send the remaining keys via P2P */
 	{
 		/* wait now for receiving all messages */
@@ -176,7 +185,7 @@ void a2av (
 			if (!r)
 			{
 				printf("%s: msglen_homo %zd (blocking send)\n", __FILE__, msglen_homo);
-
+				printf("%s: MPI_SORT_P2P_OVERLAP=%d\n", __FILE__, MPI_SORT_P2P_OVERLAP);
 				printf("%s: HOMO %g s SEND %g s A2A %g s RECV %g s (OVERALL %g s)\n",
 					   __FILE__, thomo, tsend, ta2a, trecv, ttotal);
 			}
