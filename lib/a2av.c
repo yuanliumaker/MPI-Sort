@@ -82,7 +82,7 @@ void a2av (
 	MPI_Request reqs[2 * rc];
 
 	/* P2P reqs */
-	__extension__ void post_recv()
+	__extension__ void post_p2p()
 	{
 		for (int rr = 0; rr < rc; ++rr)
 		{
@@ -104,7 +104,7 @@ void a2av (
 	}
 
 	if (1 == MPI_SORT_P2P_OVERLAP)
-		post_recv();
+		post_p2p();
 	else
 		if (-1 == MPI_SORT_P2P_OVERLAP)
 			MPI_CHECK(MPI_Barrier(comm));
@@ -155,8 +155,8 @@ void a2av (
 
 	const double t3 = MPI_Wtime();
 
-	if (1 == !MPI_SORT_P2P_OVERLAP)
-		post_recv();
+	if (1 != MPI_SORT_P2P_OVERLAP)
+		post_p2p();
 
 	/* recv/send the remaining keys via P2P */
 	{
