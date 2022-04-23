@@ -4,7 +4,7 @@ int MPI_Sort (
 	void * sendbuf_destructive,
 	int sendcount,
 	MPI_Datatype datatype,
-	const void * recvbuf,
+	void * recvbuf,
 	const int recvcount,
 	MPI_Comm comm);
 
