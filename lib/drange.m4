@@ -7,7 +7,7 @@ dnl $3: value
 define(`iter',dnl
 `pushdef(`$2', `$3')dnl
 $1
-popdef(`$2')')
+popdef(`$2')'))
 dnl foreach:
 dnl stmt
 dnl itervar
