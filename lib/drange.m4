@@ -1,5 +1,5 @@
 divert(-1)
-define(`forloop',
+define(`_forloop',
 dnl iter:
 dnl $1: stmt
 dnl $2: var
