@@ -42,7 +42,7 @@ divert(0)
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-
+#include <limits.h>
 #include <mpi.h>
 
 #include "macros.h"
@@ -116,7 +116,9 @@ define(rcontract,
        const ptrdiff_t count,
        void * const inout)
 {
-	type($1) minval, maxval;
+	type($1) minval = 0, maxval = (type($1))ULONG_MAX;
+
+if (count)
 	{
 	const type($1) * const restrict in = inout;
 

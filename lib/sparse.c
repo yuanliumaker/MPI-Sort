@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <limits.h>
 #include <assert.h>
 #include <string.h>
 
@@ -127,10 +128,15 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 	const double t1 = MPI_Wtime();
 
 	lsort(stable, sizeof(KEY_T), vsz, sendcount, sendkeys, sendvals);
-
 	const double t2 = MPI_Wtime();
 
-	KEY_T krmin = sendkeys[0], krmax = sendkeys[sendcount - 1];
+	KEY_T krmin = 0, krmax = (KEY_T)ULONG_MAX;
+
+	if (sendcount)
+	{
+		krmin = sendkeys[0];
+		krmax = sendkeys[sendcount - 1];
+	}
 
 	/* find key ranges */
 	{
