@@ -125,6 +125,8 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 	if (sendvals)
 		MPI_CHECK(MPI_Type_size(valtype, &vsz));
 
+	MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &vsz, 1, MPI_INT, MPI_MAX, comm));
+
 	const double t1 = MPI_Wtime();
 
 	lsort(stable, sizeof(KEY_T), vsz, sendcount, sendkeys, sendvals);
@@ -232,6 +234,7 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 
 	const double t6 = MPI_Wtime();
 
+
 #ifndef NDEBUG
 	ptrdiff_t check[rankcountp1];
 	MPI_CHECK(MPI_Scan(sstart, check, rankcountp1, MPI_INT64_T, MPI_SUM, comm));
@@ -250,6 +253,7 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 
 		MPI_CHECK(MPI_Alltoall(scount, 1, MPI_INT64_T, rcount, 1, MPI_INT64_T, comm));
 
+
 		ptrdiff_t rstart[rankcount];
 		const ptrdiff_t __attribute__((unused)) check = exscan(rankcount, rcount, rstart);
 		assert(check == recvcount);
@@ -258,7 +262,7 @@ int CAT(CAT(sparse_uint, _KEYBITS_), _t) (
 		a2av(sendkeys, scount, sstart, MPI_KEY_T, recvkeys, rcount, rstart, comm);
 
 		/* values */
-		if (sendvals)
+		if (vsz)
 			a2av(sendvals, scount, sstart, valtype, recvvals, rcount, rstart, comm);
 	}
 

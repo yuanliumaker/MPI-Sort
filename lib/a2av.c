@@ -111,6 +111,7 @@ void a2av (
 
 	const double t2 = MPI_Wtime();
 
+
 	/* send around keys via A2A */
 	{
 		const ptrdiff_t msgsz = MAX(1, MPI_SORT_A2AV_SIZE);
