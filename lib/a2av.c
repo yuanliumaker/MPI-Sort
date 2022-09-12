@@ -20,7 +20,7 @@ static uint16_t hash16 (const uint64_t data)
 }
 
 static float MPI_SORT_A2AV_TUNE = 0.95;
-static ptrdiff_t MPI_SORT_A2AV_SIZE = 128, MPI_SORT_A2AV_HOMO = -1;
+static ptrdiff_t MPI_SORT_A2AV_SIZE = 4096, MPI_SORT_A2AV_HOMO = -1;
 static int MPI_SORT_P2P_OVERLAP = 1;
 
 static void __attribute__((constructor)) init ()
