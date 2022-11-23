@@ -184,7 +184,7 @@ int MPI_Sort_bykey (
 {
 	DIE_UNLESS(sendcount >= 0 && recvcount >= 0);
 
-	/* squeeze type range into fewer ones */
+	/* squeeze key type range into fewer ones */
 	{
 		if (MPI_IN_PLACE == sendkeys)
 			sendkeys = recvkeys;
@@ -216,6 +216,9 @@ int MPI_Sort_bykey (
 		if (MPI_UNSIGNED_LONG == keytype)
 			keytype = MPI_UINT64_T;
 	}
+
+	if (MPI_IN_PLACE == sendvals)
+		sendvals = recvvals;
 
 	if (MPI_UINT8_T == keytype
 		|| MPI_UINT16_T == keytype
