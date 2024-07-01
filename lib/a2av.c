@@ -21,7 +21,7 @@ static uint16_t hash16 (const uint64_t data)
 
 static float MPI_SORT_A2AV_TUNE = 0.95;
 static ptrdiff_t MPI_SORT_A2AV_SIZE = 4096, MPI_SORT_A2AV_HOMO = -1;
-static int MPI_SORT_P2P_OVERLAP = 1;
+static int MPI_SORT_P2P_OVERLAP = 1;//表明将在执行全局通信操作的同时，启动点对点通信操作 通过二者之间的重叠，提高整体性能
 
 static void __attribute__((constructor)) init ()
 {
@@ -30,7 +30,12 @@ static void __attribute__((constructor)) init ()
 	READENV(MPI_SORT_A2AV_HOMO, atoll);
 	READENV(MPI_SORT_P2P_OVERLAP, atoi);
 }
-
+/*in 发送缓冲区指针 即sendkeys
+sendcounts  每个进程发送的元素数量 数组 scount
+ sdispls 每个进程发送数据的偏移量数组 即sstart scount的前缀和
+ out 接收缓冲区指针 recvkeys
+ recvounts 每个进程接收的数据元素数量 数组 rcount
+ rdispls 每个进程接收数据的偏移量数组 rstart  rcount 的前缀和*/
 void a2av (
 	const void * in,
 	const ptrdiff_t * sendcounts,
@@ -53,6 +58,9 @@ void a2av (
 	   max 95-percentiles of the message sizes first
 	   TODO: refine balance between A2A and P2P,
 	   it makes sense to spend few milliseconds for that */
+	//    计算同构消息长度
+	// 同构化消息长度，是一种标准化的消息长度，用于衡量各进程之间的消息大小，其作用是避免各进程之间的消息大小的不均衡
+	// 导致通信瓶颈 提高通信效率
 	if (msglen_homo < 0)
 	{
 		ptrdiff_t s[2 * rc];
@@ -61,9 +69,9 @@ void a2av (
 
 		__extension__ int compar(const void * a, const void * b) { return *(ptrdiff_t *)a - *(ptrdiff_t *)b; }
 		qsort(s, 2 * rc, sizeof(ptrdiff_t), compar);
-
+		// 各进程取排序后的s数组中的某个百分位数值
 		msglen_homo = s[MAX(0, MIN(2 * rc - 1, (int)round(MPI_SORT_A2AV_TUNE * 2 * rc)))];
-
+	//使用MPI_Allreduce将用于找到所有进程之间消息长度的最大值并存储在msglen_homo 中
 		MPI_CHECK(MPI_Allreduce(MPI_IN_PLACE, &msglen_homo, 1, MPI_INT64_T, MPI_MAX, comm));
 	}
 
@@ -86,6 +94,7 @@ void a2av (
 	{
 		for (int rr = 0; rr < rc; ++rr)
 		{
+			// rem 用来判断该进程是否需要继续接收数据，rem>0 表明该进程需要接收的消息长度超过标准化的消息长度，还剩rem 个元素需要接收
 			const ptrdiff_t rem = recvcounts[rr] - msglen_homo;
 
 			if (rem > 0)
@@ -111,7 +120,7 @@ void a2av (
 
 	const double t2 = MPI_Wtime();
 
-
+	// alltoall和p2p 通过h 来控制
 	/* send around keys via A2A */
 	{
 		const ptrdiff_t msgsz = MAX(1, MPI_SORT_A2AV_SIZE);
@@ -126,6 +135,7 @@ void a2av (
 		for (ptrdiff_t base = 0; base < basehi; base += msgsz)
 		{
 			/* last message is likely to be truncated */
+			/*最后一个的消息长度可能比预定的长度药效，因此需要截断*/
 			const ptrdiff_t msgsz_trunc = MIN(msgsz, basehi - base);
 
 			/* pack sendbuf */

@@ -49,7 +49,7 @@ ptrdiff_t lowerbound (
 
     return first - head;
 }
-
+// 作用：用于从输入数组in 中根据索引数组idx 收集元素并存储到输出数组out 中，count为输入数组长度
 #define GATHER_KERNEL(T)			\
     static void gather_ ## T (			\
 	const ptrdiff_t count,			\
@@ -91,6 +91,7 @@ void gather (
 	return gather_uint64_t(count, in, idx, out);
 
     /* generic impl */
+    // 一般实现，将in 复制到out 中，基于索引数组，size 是数组中的元素大小
     for (ptrdiff_t i = 0; i < count; ++i)
 	memcpy(size * i + (char *)out,
 	       size * idx[i] + (char *)in,

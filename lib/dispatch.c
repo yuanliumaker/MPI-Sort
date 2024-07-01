@@ -50,6 +50,7 @@ SPARSE_SIGNATURE(uint32_t);
 SPARSE_SIGNATURE(uint64_t);
 
 /* return copy of array */
+// t 元素类型，c 元素个数 p 数组地址
 static void * mkcpy (
 	MPI_Datatype t,
 	const ptrdiff_t c,
@@ -135,6 +136,7 @@ static int dispatch_unsigned (
 				MPI_SORT_STABLE, sendkeys, sendvals, sendcount,
 				valtype, recvkeys, recvvals, recvcount, comm);
 		else
+		// 用于调试目的，导致程序终止，并生成core dump 以便调试
 			__builtin_trap();
 	}
 	else /* if RADIX */
@@ -302,7 +304,7 @@ int MPI_Sort_bykey (
 
 	return MPI_ERR_TYPE;
 }
-
+// 
 __attribute__((visibility ("default")))
 int MPI_Sort (
 	void * sendbuf,

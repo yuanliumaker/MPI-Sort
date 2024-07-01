@@ -33,7 +33,7 @@ static void gather (
 	for (C i = 0; i < count; ++i)
 		out[i] = in[idx[i]];
 }
-
+// 根据给定idx 将in 按idx 复制到out vsz为in 中元素类型大小，
 template < typename C, typename I >
 static void gather_values (
 	const size_t vsz,
@@ -68,7 +68,12 @@ static void gather_values (
 				   vsz);
 	}
 }
-
+// 模板函数用于间接对键值对排序 
+// k: 键数组 类型为K
+// v: 值数组 值数组的元素大小为vsz 数组长度为c
+// 排序方式取决于s 的值，使用稳定排序或者非稳定排序，并可以使用并行排序
+// 思路：给定k 和v 有pair(k[i],i),通过对pair 如k[30,20,10,40] v[300,200,100,400]->pair([30,0],[20,1],[10,2][40,3])
+// 对pair sort ->([10,2][20,1],[30,0],[40,3])->get_values()->v[100,200,300,400]
 template < typename K, typename C >
 static void sort_kv_indirect (
 	const int s,
@@ -96,6 +101,7 @@ static void sort_kv_indirect (
 #endif
 	{
 		if (s)
+		// 参数t:迭代器首地址，t+c 最后一个地址，在此范围内对迭代器内元素进行排序
 			std::stable_sort(t, t + c);
 		else
 			std::sort(t, t + c);
@@ -105,9 +111,10 @@ static void sort_kv_indirect (
 	memcpy(v2, v, vsz * c);
 
 	enum { BUNCH = 1 << 12 };
-
+	// 使用批处理的方式对数据进行排序并重新排列值数组 每次处理BUNCH个元素，防止一次处理过多导致性能问题
 	for (ptrdiff_t base = 0; base < c; base += BUNCH)
 	{
+		// 计算当前批次要处理的数量，c-base为当前批次剩余未处理的元素数量，取最小值确保不会超过数组的边界
 		const C n = (C)std::min((ptrdiff_t)c - base, (ptrdiff_t)BUNCH);
 
 		const KI_t * iki = t + base;
@@ -223,7 +230,7 @@ static void sort_bykey (
 	/* why signed integers? i want to trigger gatherdd.
 	   here i am speculating that gatherdd is finally faster
 	   than scalar loads on microarchs in 2020+ */
-
+	 
 	if ((ptrdiff_t)std::numeric_limits<int32_t>::max() >= c)
 		sort_bykey_t(s, vsz, (int32_t)c, k, v);
 	else
